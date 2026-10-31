@@ -20,6 +20,19 @@
     color: #f3ede4; background: rgba(232,74,47,.14); border: 1px solid rgba(232,74,47,.45); }
   .btns button:hover { background: rgba(232,74,47,.3); }
   .facts { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.12); font: 11px/1.5 "Roboto Mono", Consolas, monospace; color: rgba(243,237,228,.6); }
+  #life { position: absolute; left: 12px; bottom: 12px; z-index: 2; max-width: min(720px, calc(100vw - 24px)); padding: 10px 12px 8px; box-sizing: border-box;
+    background: rgba(21,18,15,.55); backdrop-filter: blur(24px); border-radius: 14px; display: flex; flex-direction: column; gap: 8px; }
+  #life .set { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+  #life .set > b { flex: none; width: 100%; font: 600 10.5px "Roboto Condensed", Bahnschrift, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: rgba(243,237,228,.62); }
+  #life figure { margin: 0; width: 64px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: default; }
+  #life figure.bird { cursor: pointer; }
+  #life figure .pic { width: 64px; height: 64px; border-radius: 10px; background: #2a2521 center / cover no-repeat; box-shadow: 0 2px 10px rgba(0,0,0,.35); transition: transform .18s, box-shadow .18s; }
+  #life figure.bird:hover .pic { transform: translateY(-3px); box-shadow: 0 6px 18px rgba(0,0,0,.45), 0 0 0 2px rgba(232,74,47,.75); }
+  #life figure.on .pic { box-shadow: 0 0 0 2px #E84A2F, 0 0 18px rgba(232,74,47,.55); }
+  #life figcaption { font: 10.5px/1.15 "Roboto Condensed", Bahnschrift, sans-serif; color: rgba(243,237,228,.82); text-align: center; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #life .credit { font: 9.5px "Roboto Mono", Consolas, monospace; color: rgba(243,237,228,.42); }
+  #life .credit a { color: inherit; }
+  .tag.meet { background: rgba(232,74,47,.8); }
   #loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 5; background: #0d0b0a; font-size: 15px; color: rgba(243,237,228,.7); transition: opacity .8s; }
   .tag { position: absolute; z-index: 1; transform: translate(-50%, -100%); pointer-events: none; white-space: nowrap;
     font: 600 12px "Roboto Condensed", Bahnschrift, sans-serif; letter-spacing: .03em; color: #fff; padding: 3px 8px; border-radius: 7px;
@@ -891,6 +904,46 @@ function listen(dt) {
     if (earAt.distanceTo(c) < 900) voice(f.name, earAt, 40);
   }
 }
+let meeting = null;
+const meetTag = Object.assign(document.createElement('div'), { className: 'tag meet' }); meetTag.style.display = 'none'; document.body.appendChild(meetTag);
+async function meet(name, fig) {
+  document.querySelectorAll('#life figure.on').forEach((x) => x.classList.remove('on')); fig.classList.add('on');
+  if (!SOUND.on) { await soundOn(); document.getElementById('sound').textContent = 'Listening… (press to quiet)'; }
+  const c = camera.position, fl = flocks.find((x) => x.name === name), pe = perched.find((x) => x.name === name), at = new THREE.Vector3();
+  let best = -1, bd = Infinity;
+  if (fl) for (let i = 0; i < fl.birds.length; i++) { const m = new THREE.Matrix4(); fl.im.getMatrixAt(i, m); at.setFromMatrixPosition(m); const d = at.distanceToSquared(c); if (d < bd) { bd = d; best = i; } }
+  if (pe) pe.birds.forEach((b, i) => { const d = (b.x - c.x) ** 2 + (b.g - c.y) ** 2 + (-b.y - c.z) ** 2; if (d < bd) { bd = d; best = i; } });
+  if (best < 0) return;
+  const span = (fl || pe).info.wingspan || 0.4;
+  fly = null; camera.near = 0.05; camera.updateProjectionMatrix();
+  // stand off a few wingspans, a little above and to the side
+  const away = new THREE.Vector3().subVectors(c, controls.target).setY(0).normalize();
+  if (!away.lengthSq()) away.set(0, 0, 1);
+  meeting = { fl, pe, i: best, name, until: U.uTime.value + 14, dist: Math.max(1.4, span * (fl ? 7 : 6)), away, called: 0 };
+  meetTag.textContent = name; meetTag.style.display = '';
+}
+function birdAt(m, out) {
+  if (m.fl) { const k = new THREE.Matrix4(); m.fl.im.getMatrixAt(m.i, k); return out.setFromMatrixPosition(k); }
+  const b = m.pe.birds[m.i]; return out.set(b.x, b.g + b.s * 0.4, -b.y);
+}
+const meetAt = new THREE.Vector3(), meetCam = new THREE.Vector3();
+function keepMeeting(dt) {
+  if (!meeting) { meetTag.style.display = 'none'; return; }
+  const m = meeting, t = U.uTime.value;
+  if (t > m.until) { meeting = null; camera.near = 1; camera.updateProjectionMatrix(); document.querySelectorAll('#life figure.on').forEach((x) => x.classList.remove('on')); return; }
+  birdAt(m, meetAt);
+  meetCam.copy(meetAt).addScaledVector(m.away, m.dist); meetCam.y += m.dist * 0.35;
+  meetCam.y = Math.max(meetCam.y, sampleHeight(meetCam.x, -meetCam.z) + 0.6);
+  const k = 1 - Math.exp(-dt * (m.fl ? 2.5 : 1.8));
+  camera.position.lerp(meetCam, k); controls.target.lerp(meetAt, 1 - Math.exp(-dt * 5));
+  // its voice once you are close, again now and then
+  if (SOUND.on && t > m.called && camera.position.distanceTo(meetAt) < m.dist * 2.5) { voice(m.name, meetAt, 12); m.called = t + 5 + Math.random() * 3; }
+  v.copy(meetAt).project(camera);
+  const show = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
+  meetTag.style.display = show ? '' : 'none';
+  if (show) { meetTag.style.left = ((v.x + 1) / 2 * innerWidth) + 'px'; meetTag.style.top = ((1 - v.y) / 2 * innerHeight - m.dist * 0 - 22) + 'px'; }
+}
+controls.addEventListener('start', () => { if (meeting) meeting.until = 0; });
 function updateFalls() { FU.uFog.value.copy(scene.fog.color); FU.uFogD.value = scene.fog.density; FU.uLight.value = 0.55 + 0.45 * Math.min(1, sun.intensity / 3.6); }
 
 const birdM = new THREE.Matrix4(), birdQ = new THREE.Quaternion(), birdS = new THREE.Vector3(), birdP = new THREE.Vector3(), birdUp = new THREE.Vector3(0, 1, 0);
@@ -1132,6 +1185,7 @@ const views = {
 let fly = null;
 function go(name) {
   const v = views[name]();
+  if (meeting) meeting.until = 0;
   fly = { t: 0, p0: camera.position.clone(), t0: controls.target.clone(), p1: v.pos, t1: v.target };
 }
 document.getElementById('goClose').onclick = () => go('bridge');
@@ -1149,11 +1203,26 @@ document.getElementById('about').textContent = (meta.core.lidar_share > 0.02
   ? 'Where the US laser survey has flown, every tree stands where it found one, at its measured height; elsewhere trees grow from the photo\'s green, with estimated heights.'
   : 'Trees grow from the photo\'s green, with heights estimated from how green it is.')
   + ' ' + (PROFILE.summary || 'Each tree is grown from a species recipe and chosen by rule: broadleaves by the water, conifers up the slopes, ferns at their roots.');
-document.getElementById('facts').innerHTML += '<br>' + SPECIES.map((s) => s.name).join(' · ')
-  + (FALLS.length ? ' · ' + FALLS.length + ' waterfall' + (FALLS.length > 1 ? 's' : '') : '')
-  + (buildingCount ? ' · ' + buildingCount.toLocaleString() + ' buildings' : '')
-  + (flocks.length ? ' · overhead: ' + flocks.map((f) => f.name).join(', ') : '')
-  + (perched.length ? ' · on the ground: ' + perched.map((p) => p.name).join(', ') : '');
+document.getElementById('facts').innerHTML += '<br>' + [FALLS.length ? FALLS.length + ' waterfall' + (FALLS.length > 1 ? 's' : '') : '',
+  buildingCount ? buildingCount.toLocaleString() + ' buildings' : '', BIRDS.length ? BIRDS.length + ' kinds of bird' : ''].filter(Boolean).join(' · ');
+// THE LIFE STRIP (2026-10-31): a picture of every tree and bird in this world, from
+// Wikimedia Commons. Press a bird and you hear it and go to meet one.
+const PICS = meta.portraits || {};
+const picOf = (name) => { const p = PICS[name]; if (!p) return '';
+  const e = inside('pic-' + name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''));
+  return e ? 'data:image/jpeg;base64,' + e : p.b64 ? 'data:image/jpeg;base64,' + p.b64 : DATA + p.file; };
+{
+  const life = document.getElementById('life'), esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]);
+  const tile = (name, cls, sub) => { const src = picOf(name);
+    return '<figure class="' + cls + '" data-name="' + esc(name) + '" title="' + esc(name + (sub ? ', ' + sub : '')) + '"><div class="pic"' + (src ? ' style="background-image:url(\'' + src + '\')"' : '') + '></div><figcaption>' + esc(name) + '</figcaption></figure>'; };
+  const birdTiles = [...flocks.map((x) => tile(x.name, 'bird', 'in the air, press to meet it')), ...perched.map((x) => tile(x.name, 'bird', 'on the ground, press to meet it'))];
+  let html = '';
+  if (birdTiles.length) html += '<div class="set"><b>Birds here · press one to hear it</b>' + birdTiles.join('') + '</div>';
+  if (SPECIES.length) html += '<div class="set"><b>The forest</b>' + SPECIES.map((s) => tile(s.name, 'tree', s.broad ? 'broadleaf' : 'conifer')).join('') + '</div>';
+  if (Object.keys(PICS).length) html += '<div class="credit">pictures: <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a>, each with its own licence</div>';
+  if (html) { life.innerHTML = html; life.hidden = false; }
+  life.addEventListener('click', (e) => { const fig = e.target.closest('figure.bird'); if (fig) meet(fig.dataset.name, fig); });
+}
 { const by = [...new Set(BIRDS.filter((b) => b.sound).map((b) => b.sound.credit.by))];
   if (by.length) document.getElementById('facts').innerHTML += '<br>bird voices: xeno-canto, recorded by ' + by.join(', ') + ' (Creative Commons)'; }
 
@@ -1177,6 +1246,7 @@ renderer.setAnimationLoop(() => {
   flyBirds(dt);
   updateFalls();
   listen(dt);
+  keepMeeting(dt);
   // shadows follow what you are looking at, within the forest
   sun.target.position.copy(controls.target); sun.position.copy(sky.material.uniforms.sunPosition.value).multiplyScalar(8000).add(controls.target);
   if (waterNormals) { waterNormals.offset.x += dt * 0.0035; waterNormals.offset.y += dt * 0.0016; }
@@ -1191,5 +1261,6 @@ renderer.setAnimationLoop(() => {
 });
 const loading = document.getElementById('loading'); loading.style.opacity = 0; setTimeout(() => loading.remove(), 900);
 </script>
+<div id="life" hidden></div>
 </body>
 </html>

@@ -283,6 +283,31 @@ def _voice(key, want):
             'credit': {'by': m.get('creator') or m.get('rightsHolder') or 'xeno-canto', 'license': m.get('license', ''), 'url': m.get('references') or m['identifier']}}
 
 
+def _portraits(names):
+    """A small picture of each species from Wikimedia Commons, its Wikidata image (P18),
+    found by scientific name when there is one, else by its English name. Returns
+    {name: (jpeg bytes, credit url)}; a species with no picture is left out."""
+    out = {}
+    for name, sci in names:
+        try:
+            if sci:
+                q = 'SELECT ?img WHERE { ?t wdt:P225 "%s"; wdt:P18 ?img. } LIMIT 1' % sci.replace('"', '')
+            else:
+                q = 'SELECT ?img WHERE { ?t rdfs:label "%s"@en; wdt:P18 ?img; wdt:P225 ?n. } LIMIT 1' % name.split(' and ')[0].replace('"', '')
+            rows = _json('https://query.wikidata.org/sparql?' + urllib.parse.urlencode({'query': q, 'format': 'json'}), timeout=40)['results']['bindings']
+            if not rows:
+                continue
+            fname = urllib.parse.unquote(rows[0]['img']['value'].rsplit('/', 1)[-1])
+            src = 'https://commons.wikimedia.org/wiki/Special:FilePath/' + urllib.parse.quote(fname) + '?width=160'
+            with urllib.request.urlopen(urllib.request.Request(src, headers=UA), timeout=40) as r:
+                data = r.read()
+            if len(data) <= 400_000:
+                out[name] = (data, 'https://commons.wikimedia.org/wiki/File:' + urllib.parse.quote(fname))
+        except Exception:
+            continue
+    return out
+
+
 def bird_life(core, profile=None, cap_fly=4, cap_sing=4):
     """The birds recorded here (GBIF), split into those you see flying and those you meet on
     the ground, each at its wingspan, with a song for the ground and a call for the air."""
@@ -426,6 +451,12 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
         if v:
             blocks[f"snd-{b['key']}"] = base64.b64encode(v["bytes"]).decode()
             b["sound"] = {"file": f"sounds/{b['key']}-{v['type']}.mp3", "type": v["type"], "credit": v["credit"]}
+    portraits = {}
+    trees_named = [(t.get("name"), t.get("sci")) for t in ((profile or {}).get("species") or []) if t.get("name")]
+    for pname, (data, credit) in _portraits([(b["name"], b.get("sci")) for b in birds] + trees_named).items():
+        slug = re.sub(r"[^a-z0-9]+", "-", pname.lower()).strip("-")
+        blocks[f"pic-{slug}"] = base64.b64encode(data).decode()
+        portraits[pname] = {"file": f"portraits/{slug}.jpg", "credit": credit}
     marks = _landmarks(far, name, lon, lat)
     for m in marks:
         x, y = warp_xy("EPSG:4326", crs, [m["lon"]], [m["lat"]])
@@ -437,7 +468,7 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
         "trees": {"measured": int(len(measured)), "estimated": int(len(estimated)), "tallest_m": round(float(trees[:, 3].max()), 1) if len(trees) else 0},
         "sources": {"ground": "USGS 3DEP lidar" if lidar.any() else "Copernicus DEM 30 m", "core_photo": photo,
                     "far_photo": f"Sentinel-2 {s2_day}", "terrain": "Copernicus DEM GLO-30"},
-        "landmarks": marks, "buildings": buildings, "features": features, "birds": birds, "profile": profile or None,
+        "landmarks": marks, "buildings": buildings, "features": features, "birds": birds, "portraits": portraits, "profile": profile or None,
     }
     caveats = []
     if not lidar.any():
