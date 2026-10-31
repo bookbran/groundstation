@@ -298,7 +298,7 @@ for (const fl of HERO) {
   const n = Math.hypot(ex, ey); fl.e = new THREE.Vector2(ex / n, ey / n);
   if (fl.e.dot(fl.d) < 0.2) fl.e.copy(fl.d);
   fl.es = new THREE.Vector2(-fl.e.y, fl.e.x);
-  const R = fl.R = THREE.MathUtils.clamp(fl.h * 0.42, 35, 80), L = fl.L = R + 70, ext = L + 70, S = 340;
+  const R = fl.R = THREE.MathUtils.clamp(fl.h * 0.42, 35, 80), L = fl.L = R + 22, ext = L + 80, S = 340;   // the sheer wall is the bowl; either side it eases back into the slope
   fl.C = [fl.xy[0] + fl.e.x * (R - 1.5), fl.xy[1] + fl.e.y * (R - 1.5)];
   let lo = fl.base, nx = fl; while (nx.next) { nx = nx.next; lo = Math.min(lo, nx.base); }
   { const D = Math.max(110, fl.h * 0.75); fl.plaza = [nx.xy[0] + fl.e.x * D, nx.xy[1] + fl.e.y * D]; fl.foot = nx.xy; }
@@ -355,7 +355,7 @@ coreMesh.receiveShadow = true;
   const leafy = new THREE.MeshStandardMaterial({ roughness: 0.85 });
   const blobs = [];
   for (const fl of HERO) {
-    const R = fl.R, L = fl.L + 70, C = fl.C, e = fl.e, es = fl.es;
+    const R = fl.R, L = fl.L + 80, C = fl.C, e = fl.e, es = fl.es;
     // the path: a wing in from the left, the half circle behind the bowl, a wing out to the right;
     // each point with the way the face looks (into the bowl, or out over the valley)
     const path = [];
