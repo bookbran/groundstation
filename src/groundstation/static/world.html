@@ -12,6 +12,9 @@
     max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(232,74,47,.55) transparent; }
   #mix .row { margin: 0; max-height: 0; opacity: 0; transform: translateY(-6px); overflow: hidden; transition: max-height .45s ease, opacity .45s ease, transform .45s ease, margin .45s ease; }
   #mix.on .row { max-height: 30px; opacity: 1; transform: none; margin: 6px 0; }
+  #mix .row label { cursor: pointer; user-select: none; transition: opacity .2s; }
+  #mix .row.muted label { opacity: .45; text-decoration: line-through; text-decoration-color: #E84A2F; }
+  #mix .row.muted input { opacity: .35; }
   #mix .row label { padding-left: 14px; box-sizing: border-box; font-size: 12px; color: rgba(243,237,228,.66); }
   #panel h1 { font-size: 16px; margin: 0 0 6px; }
   #panel p { margin: 0 0 10px; color: rgba(243,237,228,.68); line-height: 1.4; }
@@ -102,7 +105,7 @@ view.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(50, innerWidth / innerHeight, 1, 250000);
 const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; controls.dampingFactor = 0.06; controls.maxDistance = 90000; controls.maxPolarAngle = Math.PI * 0.495;
+controls.enableDamping = true; controls.dampingFactor = 0.06; controls.maxDistance = 90000; controls.maxPolarAngle = Math.PI * 0.82;   // you can stand below a cliff and look up it; the loop keeps you above ground
 for (const t of [corePhoto, farPhoto]) { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy(); }
 
 // LIFE IN EVERY SURFACE: cloud shadows drift over ground, water and trees alike,
@@ -178,7 +181,7 @@ function terrain(heights, gw, gh, ext, stride, photo, dropInside) {
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
     const k = j * w + i;
     let y = heights[Math.min(gh - 1, j * stride) * gw + Math.min(gw - 1, i * stride)];
-    if (dropInside) { const x = pos.getX(k), z = -pos.getZ(k); if (x > dropInside[0] && x < dropInside[2] && z > dropInside[1] && z < dropInside[3]) y -= 6; }
+    if (dropInside) { const x = pos.getX(k), z = -pos.getZ(k); if (x > dropInside[0] && x < dropInside[2] && z > dropInside[1] && z < dropInside[3]) y -= (x > dropInside[0] + 45 && x < dropInside[2] - 45 && z > dropInside[1] + 45 && z < dropInside[3] - 45) ? 600 : 6; }
     pos.setY(k, y);
   }
   geo.computeVertexNormals();
@@ -255,7 +258,7 @@ for (const fl of FALLS) {
     if (i >= 0 && j >= 0 && i < cgw && j < cgh) base = Math.min(base, coreH[j * cgw + i]);
   }
   if (Number.isFinite(base) && fl.lipY - fl.h < base) fl.lipY = Math.max(fl.lipY, base + fl.h);   // the lip sits a fall's height over the valley
-  fl.poolY = Math.max(fl.lipY - fl.h, Number.isFinite(base) ? base - 2 : -Infinity);
+  fl.poolY = Math.max(fl.lipY - fl.h, Number.isFinite(base) ? base - 2 : -Infinity); fl.base = Number.isFinite(base) ? base : fl.poolY;
   if (fl.next) fl.next.lipY = Math.min(fl.next.lipY, fl.poolY + 0.5);   // the next tier starts at this one's pool
 }
 for (const fl of FALLS) {
@@ -275,11 +278,123 @@ for (const fl of FALLS) {
     coreH[k] = Math.min(coreH[k], cut);
   }
 }
+// HERO FALLS (2026-10-31, from a photo of Multnomah: "make it much more impressive").
+// Where there is no laser survey the ground cannot hold a cliff, so a tall fall gets
+// its own amphitheatre: a round bowl it drops into, floored at its pool, opening
+// toward the valley, with the plateau behind held up at the lip. A wall of basalt is
+// built into the bowl's rim after the ground (below).
+const hn = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; return s - Math.floor(s); };
+const vn = (x, y) => { const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), w = fy * fy * (3 - 2 * fy);
+  return (hn(i, j) * (1 - u) + hn(i + 1, j) * u) * (1 - w) + (hn(i, j + 1) * (1 - u) + hn(i + 1, j + 1) * u) * w; };
+const fbm = (x, y) => vn(x, y) * 0.5 + vn(x * 2.1 + 5.2, y * 2.1) * 0.3 + vn(x * 4.3, y * 4.3 + 1.7) * 0.2;
+const HERO = FALLS.filter((fl) => fl.h >= 60).sort((a, b) => b.h - a.h).slice(0, 3);
+for (const fl of HERO) {
+  // which way the land falls away here, over a few hundred metres: the face of the cliff
+  const [li, lj] = cellAt(fl.xy[0], fl.xy[1]), q = Math.round(150 / cell);
+  let ex = hAt(li - q, lj) - hAt(li + q, lj), ey = hAt(li, lj + q) - hAt(li, lj - q);   // downhill, x east and y north
+  if (Math.hypot(ex, ey) < 5) { ex = fl.d.x; ey = fl.d.y; }
+  const n = Math.hypot(ex, ey); fl.e = new THREE.Vector2(ex / n, ey / n);
+  if (fl.e.dot(fl.d) < 0.2) fl.e.copy(fl.d);
+  fl.es = new THREE.Vector2(-fl.e.y, fl.e.x);
+  const R = fl.R = THREE.MathUtils.clamp(fl.h * 0.42, 35, 80), L = fl.L = R + 70, ext = L + 70, S = 340;
+  fl.C = [fl.xy[0] + fl.e.x * (R - 1.5), fl.xy[1] + fl.e.y * (R - 1.5)];
+  let lo = fl.base, nx = fl; while (nx.next) { nx = nx.next; lo = Math.min(lo, nx.base); }
+  { const D = Math.max(110, fl.h * 0.75); fl.plaza = [nx.xy[0] + fl.e.x * D, nx.xy[1] + fl.e.y * D]; fl.foot = nx.xy; }
+  const others = FALLS.filter((o) => { let c = fl; while (c) { if (c === o) return false; c = c.next; } return true; });
+  const [ci, cj] = cellAt(fl.C[0], fl.C[1]), rr = Math.ceil(Math.hypot(ext, S) / cell);
+  for (let dj = -rr; dj <= rr; dj++) for (let di = -rr; di <= rr; di++) {
+    const i = ci + di, j = cj + dj; if (i < 0 || j < 0 || i >= cgw || j >= cgh) continue;
+    const wx = core.extent[0] + (i + 0.5) * cell, wy = core.extent[3] - (j + 0.5) * cell, x = wx - fl.C[0], y = wy - fl.C[1];
+    const s = x * fl.e.x + y * fl.e.y, t = x * fl.es.x + y * fl.es.y, dist = Math.hypot(x, y);
+    if (Math.abs(t) > ext || s > S || s < -(R + 60)) continue;
+    let w = (1 - THREE.MathUtils.smoothstep(Math.abs(t), L, ext)) * (1 - THREE.MathUtils.smoothstep(s, S - 90, S));
+    for (const o of others) { const dd = Math.hypot(wx - o.xy[0], wy - o.xy[1]); if (dd < 90) w *= THREE.MathUtils.smoothstep(dd, 40, 90); }
+    if (w <= 0) continue;
+    const k = j * cgw + i, inArc = Math.abs(t) < R;
+    const below = inArc ? (dist < R + 3 || s > 0) : s > -3;
+    if (below) {   // the bowl floor, then a talus slope easing down to the valley
+      const target = Math.max(lo - 2, fl.poolY - Math.max(0, s) * 0.32);
+      coreH[k] += (Math.min(coreH[k], target) - coreH[k]) * w;
+      if (w > 0.5 && (dist < R + 3 || s < 5)) carved[k] = 1;
+    } else {       // the plateau, held up at the lip just behind the edge
+      const dw = inArc ? dist - R : -s;
+      if (dw < 50 && !carved[k]) coreH[k] += (Math.max(coreH[k], fl.lipY + 0.5) - coreH[k]) * w * (1 - THREE.MathUtils.smoothstep(dw, 25, 50));
+    }
+  }
+}
+const segD = (x, y, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(x - a[0] - dx * t, y - a[1] - dy * t); };
+const clearAt = (x, y) => HERO.some((fl) => Math.hypot(x - fl.plaza[0], y - fl.plaza[1]) < 55 || segD(x, y, fl.plaza, fl.foot) < 26);
 const carvedAt = (x, y) => { const [i, j] = cellAt(x, y); return i >= 0 && j >= 0 && i < cgw && j < cgh && carved[j * cgw + i] === 1; };
 
 const farMesh = terrain(farH, far.grid[0], far.grid[1], far.extent, 1, farPhoto, core.extent);
 const coreMesh = terrain(coreH, cgw, cgh, core.extent, 2, corePhoto, null);
 coreMesh.receiveShadow = true;
+{
+  const stone = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, side: THREE.DoubleSide, envMapIntensity: 0.35 });
+  const leafy = new THREE.MeshStandardMaterial({ roughness: 0.85 });
+  const blobs = [];
+  for (const fl of HERO) {
+    const R = fl.R, L = fl.L, C = fl.C, e = fl.e, es = fl.es;
+    // the path: a wing in from the left, the half circle behind the bowl, a wing out to the right;
+    // each point with the way the face looks (into the bowl, or out over the valley)
+    const path = [];
+    const step = 1.5, arcN = Math.ceil(Math.PI * R / step), wingN = Math.ceil((L - R) / step);
+    for (let a = 0; a <= wingN; a++) { const tt = -L + (L - R) * a / wingN; path.push([C[0] + es.x * tt, C[1] + es.y * tt, e.x, e.y]); }
+    for (let a = 1; a < arcN; a++) { const th = -Math.PI / 2 + Math.PI * a / arcN, dx = -e.x * Math.cos(th) + es.x * Math.sin(th), dy = -e.y * Math.cos(th) + es.y * Math.sin(th); path.push([C[0] + dx * R, C[1] + dy * R, -dx, -dy]); }
+    for (let a = 0; a <= wingN; a++) { const tt = R + (L - R) * a / wingN; path.push([C[0] + es.x * tt, C[1] + es.y * tt, e.x, e.y]); }
+    const NX = path.length - 1, NY = 90, cols = NX + 1, rows = NY + 2, mid = wingN + arcN / 2;
+    const P = new Float32Array(cols * rows * 3), TH = new Float32Array(cols * rows), YF = new Float32Array(cols * rows);
+    for (let a = 0; a <= NX; a++) {
+      const [px, py, nx, ny] = path[a], u = (a - mid) * step;
+      const top = hAt(...cellAt(px - nx * 12, py - ny * 12)), foot = hAt(...cellAt(px + nx * 9, py + ny * 9));
+      const y0 = Math.min(foot, top - 4) - 3, edge = THREE.MathUtils.smoothstep(Math.abs(u), 0, 0) ;
+      const behind = THREE.MathUtils.smoothstep(Math.abs(u), 4, 22);   // smooth right behind the water
+      for (let b = 0; b < rows; b++) {
+        const k = a * rows + b, yf = Math.min(1, b / NY), y = b <= NY ? y0 + (top + 0.6 - y0) * yf : top + 0.4;
+        let inset;
+        if (b <= NY) {
+          const col = Math.pow(Math.abs(Math.sin(u / 1.25 + fbm(u / 9, y / 20) * 3)), 0.5);
+          const ledge = THREE.MathUtils.smoothstep(vn(u / 30, y / 9), 0.6, 0.9);
+          inset = (1.1 * col + 3.2 * fbm(u / 16, y / 12) + 1.8 * ledge) * (0.3 + 0.7 * behind) * (yf < 0.04 ? yf / 0.04 : 1);
+        } else inset = -12;   // the cap, folding back onto the plateau
+        P[k * 3] = px + nx * inset; P[k * 3 + 1] = y; P[k * 3 + 2] = -(py + ny * inset);
+        TH[k] = u; YF[k] = b <= NY ? yf : 1.01;
+      }
+    }
+    const idx = [];
+    for (let a = 0; a < NX; a++) for (let b = 0; b < rows - 1; b++) { const p = a * rows + b, q = p + rows; idx.push(p, q, p + 1, q, q + 1, p + 1); }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setIndex(idx); g.computeVertexNormals();
+    const N = g.attributes.normal.array;
+    { // normals face out of the rock
+      const k = Math.round(mid) * rows + Math.round(NY / 2), [, , nx, ny] = path[Math.round(mid)];
+      if (N[k * 3] * nx - N[k * 3 + 2] * ny < 0) for (let i = 0; i < N.length; i++) N[i] = -N[i];
+    }
+    const col = new Float32Array(P.length);
+    for (let k = 0; k < cols * rows; k++) {
+      const u = TH[k], y = P[k * 3 + 1], yf = YF[k], up = THREE.MathUtils.clamp((N[k * 3 + 1] - 0.05) / 0.45, 0, 1), m2 = fbm(u / 7 + 3, y / 7);
+      const moss = yf > 1 ? 1 : THREE.MathUtils.clamp(up * 0.95 + (1 - yf) * 0.75 * m2 + (m2 > 0.58 ? 0.4 : 0), 0, 1);
+      const wet = Math.exp(-(u * u) / 288) * 0.45 * (1 - yf * 0.5);
+      const shade = 0.78 + 0.6 * fbm(u / 3, y / 3), lichen = vn(u / 11, y / 11) > 0.72 ? 1 : 0;
+      const rr = 0.22 * shade + lichen * 0.06, rg = 0.2 * shade + lichen * 0.04, rb = 0.18 * shade;
+      const mr = 0.17 + 0.16 * m2, mg = 0.29 + 0.22 * m2, mb = 0.07 + 0.06 * m2;
+      const dark = 1 - wet * 0.5;
+      col[k * 3] = (rr + (mr - rr) * moss) * dark; col[k * 3 + 1] = (rg + (mg - rg) * moss) * dark; col[k * 3 + 2] = (rb + (mb - rb) * moss) * dark;
+      if (yf <= 1 && up > 0.5 && hn(u * 1.7, y * 2.3) < 0.2 && Math.abs(u) > 6) blobs.push([P[k * 3] + N[k * 3] * 0.6, y + 0.4, P[k * 3 + 2] + N[k * 3 + 2] * 0.6, 0.8 + hn(u, y) * 2.2, m2]);
+    }
+    g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    const wall = new THREE.Mesh(g, stone); wall.castShadow = wall.receiveShadow = true; scene.add(wall);
+  }
+  if (blobs.length) {   // ferns, salal and moss mats hanging off the ledges
+    const n = Math.min(4000, blobs.length), im = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0).scale(1.3, 0.7, 1.3), leafy, n);
+    const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
+    for (let i = 0; i < n; i++) {
+      const [x, y, z, sc, t] = blobs[Math.floor(i * blobs.length / n)];
+      q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hn(x, z) * 6.28); m.compose(p.set(x, y, z), q, s.set(sc, sc * (0.7 + t * 0.6), sc));
+      im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(0.2 + t * 0.22, 0.34 + t * 0.26, 0.09 + t * 0.07));
+    }
+    im.castShadow = im.receiveShadow = true; scene.add(im);
+  }
+}
 // the riverbed sits a few metres under the water surface, never at it, so the two do not flicker
 if (hasWater) { const p = coreMesh.geometry.attributes.position; for (let k = 0; k < p.count; k++) if (p.getY(k) < waterY + 0.4) p.setY(k, waterY - 3); p.needsUpdate = true; coreMesh.geometry.computeVertexNormals(); }
 scene.add(farMesh, coreMesh);
@@ -516,7 +631,7 @@ let rnd = 12345; const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 214748
 const nT = treeData.length / 5, plan = [];
 for (let i = 0; i < nT; i++) {
   const x = treeData[i * 5], y = treeData[i * 5 + 1], g = treeData[i * 5 + 2], h = treeData[i * 5 + 3];
-  if (h < 5 || h > 80 || g < waterY + 0.5 || carvedAt(x, y)) continue;
+  if (h < 5 || h > 80 || g < waterY + 0.5 || carvedAt(x, y) || clearAt(x, y)) continue;
   const nearWater = g < waterY + 14, r = rand();
   const sp = pickSpecies(g, h, nearWater, r);
   plan.push({ x, y, g, h, sp, rot: rand() * Math.PI * 2, wide: 0.85 + rand() * 0.35, tint: rand() });
@@ -533,6 +648,7 @@ for (const t of plan) {
   for (let q = 0; q < k; q++) {
     const a = rand() * Math.PI * 2, d = 1.5 + rand() * (0.12 * t.h + 2);
     const fx = t.x + Math.cos(a) * d, fy = t.y + Math.sin(a) * d, [ci, cj] = cellAt(fx, fy);
+    if (clearAt(fx, fy)) continue;
     ferns.push({ x: fx, y: fy, g: hAt(ci, cj), s: 1.2 + rand() * 1.6, rot: rand() * 6.28 });
   }
 }
@@ -736,8 +852,8 @@ const fallMat = new THREE.ShaderMaterial({ uniforms: FU, transparent: true, dept
     float streak = smoothstep(0.28, 0.85, flow);
     float fray = fn(vec2(y * 18.0 - uTime * 3.2, 3.0)) * 0.22;
     float edge = smoothstep(0.0, 0.14 + fray, x) * smoothstep(1.0, 0.86 - fray, x);
-    vec3 col = mix(vec3(0.66, 0.75, 0.8), vec3(1.0), streak) * uLight;
-    float a = edge * smoothstep(0.0, 0.015, y) * (0.5 + 0.5 * streak) * (1.0 - smoothstep(0.93, 1.0, y) * 0.6);
+    vec3 col = mix(vec3(0.8, 0.86, 0.9), vec3(1.0), streak) * uLight;
+    float a = edge * smoothstep(0.0, 0.015, y) * (0.7 + 0.3 * streak) * (1.0 - smoothstep(0.93, 1.0, y) * 0.6);
     gl_FragColor = vec4(mix(col, uFog, 1.0 - exp(-uFogD * uFogD * vDepth * vDepth)), a);
   }` });
 const foamMat = new THREE.ShaderMaterial({ uniforms: FU, transparent: true, depthWrite: false, vertexShader: vsFlow,
@@ -782,7 +898,7 @@ const fallGround = (x, y) => { const [i, j] = cellAt(x, y); return hAt(i, j); };
 const mistSeeds = [], mistSpots = [];
 for (const fl of FALLS) {
   const lip = new THREE.Vector3(fl.xy[0], fl.lipY, -fl.xy[1]), d3 = new THREE.Vector3(fl.d.x, 0, -fl.d.y), s3 = new THREE.Vector3(fl.side.x, 0, -fl.side.y);
-  const out = Math.min(22, 2 + fl.h * 0.09), W = Math.max(fl.w, 3 + fl.h * 0.05), X = 8, Y = Math.min(120, 30 + Math.round(fl.h * 0.4));
+  const out = Math.min(22, 2 + fl.h * 0.09), W = Math.max(fl.w, 3 + fl.h * (fl.R ? 0.085 : 0.05)), X = 8, Y = Math.min(120, 30 + Math.round(fl.h * 0.4));
   // the ribbon: leaves the lip level, curves out as it falls, widens toward the pool
   const g = new THREE.PlaneGeometry(1, 1, X, Y), pos = g.attributes.position, uv = g.attributes.uv;
   for (let k = 0; k < pos.count; k++) {
@@ -848,7 +964,7 @@ for (const ab of (Array.isArray(meta.features) ? meta.features : []).filter((x) 
 // panner per voice, the listener riding the camera); and every waterfall's roar,
 // louder the taller it is. Off until asked: browsers start no sound unbidden.
 const SOUND = { ctx: null, on: false, buf: {}, next: {}, roar: [] };
-window.gsWorld = { SOUND };   // for scripted checks
+window.gsWorld = { SOUND, h: (x, y) => sampleHeight(x, y), HERO: typeof HERO !== 'undefined' ? HERO : null, get camera() { return camera; }, get controls() { return controls; }, FALLS, waterY: typeof waterY === 'number' ? waterY : null, snap: (q = 0.8) => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/jpeg', q); } };   // for scripted checks
 // THE MIX (2026-10-31): a layer for each kind of sound this place actually has, from what
 // the builder found nearby: falls, birds, wind in its own trees, and from OpenStreetMap
 // the roads, railways, stadiums and stages, playgrounds and runways. Each has a slider
@@ -865,14 +981,23 @@ const LAYERS = [
   has(/^play$/) && ['play', 'Kids playing'],
   has(/^planes$/) && ['planes', 'Planes'],
 ].filter(Boolean);
-SOUND.layers = {}; SOUND.level = {};
+SOUND.layers = {}; SOUND.level = {}; SOUND.muted = {};
+const applyLayer = (k) => { if (SOUND.layers[k]) SOUND.layers[k].gain.setTargetAtTime(SOUND.muted[k] ? 0 : SOUND.level[k], SOUND.ctx.currentTime, 0.08); };
 document.getElementById('mix').innerHTML = LAYERS.map(([k, label], i) =>
   '<div class="row" style="transition-delay:' + (i * 70) + 'ms"><label for="mix-' + k + '">' + label + '</label><input id="mix-' + k + '" type="range" min="0" max="1.5" step="0.01" value="1"><output id="mix-' + k + 'v">100%</output></div>').join('');
 for (const [k] of LAYERS) {
   SOUND.level[k] = 1;
   document.getElementById('mix-' + k).oninput = (e) => {
     SOUND.level[k] = Number(e.target.value); document.getElementById('mix-' + k + 'v').textContent = Math.round(SOUND.level[k] * 100) + '%';
-    if (SOUND.layers[k]) SOUND.layers[k].gain.setTargetAtTime(SOUND.level[k], SOUND.ctx.currentTime, 0.08);
+    if (SOUND.muted[k]) { SOUND.muted[k] = false; e.target.closest('.row').classList.remove('muted'); }
+    applyLayer(k);
+  };
+  // press a layer's name to mute it, again to bring it back
+  document.querySelector('#mix label[for="mix-' + k + '"]').onclick = (e) => {
+    e.preventDefault(); SOUND.muted[k] = !SOUND.muted[k];
+    e.target.closest('.row').classList.toggle('muted', SOUND.muted[k]);
+    document.getElementById('mix-' + k + 'v').textContent = SOUND.muted[k] ? 'off' : Math.round(SOUND.level[k] * 100) + '%';
+    applyLayer(k);
   };
 }
 async function soundOn() {
@@ -880,7 +1005,7 @@ async function soundOn() {
   const ctx = SOUND.ctx = new (window.AudioContext || window.webkitAudioContext)();
   SOUND.on = true;
   SOUND.master = ctx.createGain(); SOUND.master.gain.value = 0.9; SOUND.master.connect(ctx.destination);
-  for (const [k] of LAYERS) { const g = SOUND.layers[k] = ctx.createGain(); g.gain.value = SOUND.level[k]; g.connect(SOUND.master); }
+  for (const [k] of LAYERS) { const g = SOUND.layers[k] = ctx.createGain(); g.gain.value = SOUND.muted[k] ? 0 : SOUND.level[k]; g.connect(SOUND.master); }
   for (const b of BIRDS) {
     if (!b.sound) continue;
     try {
@@ -1337,9 +1462,11 @@ const views = {
     const big = FALLS.slice().sort((a, b) => b.h - a.h)[0];
     if (!big) return { pos: at(focus).add(new THREE.Vector3(-1500, 520, 1300)), target: at(focus, 40) };
     const mid = new THREE.Vector3(big.xy[0], big.lipY - big.h * 0.5, -big.xy[1]), d3 = new THREE.Vector3(big.d.x, 0, -big.d.y);
-    const stand = mid.clone().addScaledVector(d3, Math.max(140, big.h * 1.25)).addScaledVector(new THREE.Vector3(-d3.z, 0, d3.x), big.h * 0.25);
-    stand.y = Math.max(sampleHeight(stand.x, -stand.z) + 30, big.poolY + 25);
-    return { pos: stand, target: mid.clone().add(new THREE.Vector3(0, big.h * 0.1, 0)) };
+    let low = big; while (low.next) low = low.next;
+    const look = big.e ? new THREE.Vector3(big.e.x, 0, -big.e.y) : d3;
+    const stand = big.plaza ? new THREE.Vector3(big.plaza[0], 0, -big.plaza[1]) : new THREE.Vector3(low.xy[0], 0, -low.xy[1]).addScaledVector(look, Math.max(110, big.h * 0.75));
+    stand.y = sampleHeight(stand.x, -stand.z) + 12;
+    return { pos: stand, target: new THREE.Vector3(big.xy[0], big.lipY - (big.lipY - low.poolY) * 0.47, -big.xy[1]) };
   },
   gorge: () => ({ pos: away(at(focus), at(across), 2600, 900), target: at(across, 200) }),
   hood: () => ({ pos: away(at(focus), peakAt, 9000, 9000), target: peakAt.clone().lerp(at(focus), 0.45) }),
@@ -1403,6 +1530,7 @@ renderer.setAnimationLoop(() => {
     if (fly.t >= 1) fly = null;
   }
   controls.update();
+  { const g = sampleHeight(camera.position.x, -camera.position.z) + 1.6; if (camera.position.y < g) camera.position.y = g; }
   relod();
   stream.fill();
   flyBirds(dt);
