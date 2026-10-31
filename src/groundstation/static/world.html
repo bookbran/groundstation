@@ -161,8 +161,8 @@ function living(mat, wind, rock) {
         vec3 nW = normalize(cross(dFdx(vWP), dFdy(vWP)));
         float steep = 1.0 - abs(nW.y);
         float rk = vn(vWP.xz / 3.5 + vWP.y / 5.0) * 0.55 + vn(vec2(vWP.x + vWP.z, vWP.y) / 1.8) * 0.45;
-        vec3 basalt = mix(vec3(0.13, 0.125, 0.12), vec3(0.34, 0.32, 0.29), rk);
-        basalt = mix(basalt, vec3(0.22, 0.27, 0.16), smoothstep(0.55, 0.85, vn(vWP.xz / 9.0)) * 0.5);   // moss on the ledges
+        vec3 basalt = mix(vec3(0.03, 0.028, 0.025), vec3(0.1, 0.092, 0.08), rk);   // wet dark basalt (light values, not screen values)
+        basalt = mix(basalt, mix(vec3(0.035, 0.07, 0.018), vec3(0.09, 0.15, 0.035), vn(vWP.xz / 3.0 + vWP.y * 0.2)), smoothstep(0.3, 0.75, vn(vWP.xz / 7.0 + vWP.y * 0.05)) * 0.8);   // moss draped over it
         diffuseColor.rgb = mix(diffuseColor.rgb, basalt, smoothstep(0.5, 0.78, steep) * 0.9);`);
     };
   }
@@ -300,6 +300,15 @@ for (const fl of HERO) {
   fl.C = [fl.xy[0] + fl.e.x * (R - 1.5), fl.xy[1] + fl.e.y * (R - 1.5)];
   let lo = fl.base, nx = fl; while (nx.next) { nx = nx.next; lo = Math.min(lo, nx.base); }
   { const D = Math.max(110, fl.h * 0.75); fl.plaza = [nx.xy[0] + fl.e.x * D, nx.xy[1] + fl.e.y * D]; fl.foot = nx.xy; }
+  const lowPool = nx === fl ? fl.poolY : nx.poolY, sFoot = (nx.xy[0] - fl.C[0]) * fl.e.x + (nx.xy[1] - fl.C[1]) * fl.e.y + (nx === fl ? 0 : 8);
+  const arch = (Array.isArray(meta.features) ? meta.features : []).find((x) => x.kind === 'arch' && (x.near === nx.name || x.near === fl.name));
+  const rim = arch ? (() => {
+    const m = [(arch.a[0] + arch.b[0]) / 2, (arch.a[1] + arch.b[1]) / 2], ab = [arch.b[0] - arch.a[0], arch.b[1] - arch.a[1]], L2 = Math.hypot(ab[0], ab[1]) || 1;
+    const near = FALLS.find((x) => x.name === arch.near) || nx;
+    return { m, ax: [ab[0] / L2, ab[1] / L2], sR: (m[0] - fl.C[0]) * fl.e.x + (m[1] - fl.C[1]) * fl.e.y, top: near.lipY + 13.5 };
+  })() : null;
+  fl.rim = rim;
+  if (rim) { let px = -rim.ax[1], py = rim.ax[0]; if (px * fl.e.x + py * fl.e.y < 0) { px = -px; py = -py; } const D = Math.max(110, fl.h * 0.75); fl.plaza = [rim.m[0] + px * D, rim.m[1] + py * D]; fl.foot = rim.m; }   // stand in line with the slot
   const others = FALLS.filter((o) => { let c = fl; while (c) { if (c === o) return false; c = c.next; } return true; });
   const [ci, cj] = cellAt(fl.C[0], fl.C[1]), rr = Math.ceil(Math.hypot(ext, S) / cell);
   for (let dj = -rr; dj <= rr; dj++) for (let di = -rr; di <= rr; di++) {
@@ -313,24 +322,33 @@ for (const fl of HERO) {
     const k = j * cgw + i, inArc = Math.abs(t) < R;
     const below = inArc ? (dist < R + 3 || s > 0) : s > -3;
     if (below) {   // the bowl floor, then a talus slope easing down to the valley
-      const target = Math.max(lo - 2, fl.poolY - Math.max(0, s) * 0.32);
+      const target = s <= sFoot ? Math.max(lowPool, fl.poolY - Math.max(0, s) * 0.32) : Math.max(lo - 2, lowPool - (s - sFoot) * (inArc || Math.abs(t) < R + 40 ? 0.07 : 0.2));
       coreH[k] += (Math.min(coreH[k], target) - coreH[k]) * w;
       if (w > 0.5 && (dist < R + 3 || s < 5)) carved[k] = 1;
+      if (rim && Math.abs(t) < R + 30) {
+        const along = (wx - rim.m[0]) * rim.ax[0] + (wy - rim.m[1]) * rim.ax[1];   // across the creek, metres from its middle
+        const slot = 6.5 + Math.max(0, s - rim.sR) * 0.3;
+        if (Math.abs(along) > slot) {
+          const ds = s - rim.sR, ridge = rim.top - 1 - Math.max(0, Math.abs(ds) - 5) * (ds < 0 ? 1.4 : 0.75) - Math.max(0, Math.abs(t) - R) * 0.6 - THREE.MathUtils.smoothstep(Math.abs(along) - slot, 0, 3) * 0 + (1 - THREE.MathUtils.smoothstep(Math.abs(along) - slot, 0, 2.5)) * -2;
+          if (ridge > coreH[k]) { coreH[k] += (ridge - coreH[k]) * w; if (ridge - coreH[k] < 3) carved[k] = 0; }
+        }
+      }
     } else {       // the plateau, held up at the lip just behind the edge
       const dw = inArc ? dist - R : -s;
       if (dw < 50 && !carved[k]) coreH[k] += (Math.max(coreH[k], fl.lipY + 0.5) - coreH[k]) * w * (1 - THREE.MathUtils.smoothstep(dw, 25, 50));
     }
   }
 }
+const smoothHeight = (x, y) => { const fx = (x - core.extent[0]) / cell - 0.5, fy = (core.extent[3] - y) / cell - 0.5, i = Math.floor(fx), j = Math.floor(fy), u = fx - i, v = fy - j; return (hAt(i, j) * (1 - u) + hAt(i + 1, j) * u) * (1 - v) + (hAt(i, j + 1) * (1 - u) + hAt(i + 1, j + 1) * u) * v; };
 const segD = (x, y, a, b) => { const dx = b[0] - a[0], dy = b[1] - a[1], t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (y - a[1]) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(x - a[0] - dx * t, y - a[1] - dy * t); };
-const clearAt = (x, y) => HERO.some((fl) => Math.hypot(x - fl.plaza[0], y - fl.plaza[1]) < 55 || segD(x, y, fl.plaza, fl.foot) < 26);
+const clearAt = (x, y) => HERO.some((fl) => Math.hypot(x - fl.plaza[0], y - fl.plaza[1]) < 55 || segD(x, y, fl.plaza, fl.foot) < 26 || segD(x, y, fl.plaza, fl.xy) < 22);
 const carvedAt = (x, y) => { const [i, j] = cellAt(x, y); return i >= 0 && j >= 0 && i < cgw && j < cgh && carved[j * cgw + i] === 1; };
 
 const farMesh = terrain(farH, far.grid[0], far.grid[1], far.extent, 1, farPhoto, core.extent);
 const coreMesh = terrain(coreH, cgw, cgh, core.extent, 2, corePhoto, null);
 coreMesh.receiveShadow = true;
 {
-  const stone = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, side: THREE.DoubleSide, envMapIntensity: 0.35 });
+  const stone = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, side: THREE.DoubleSide, envMapIntensity: 0.6 });
   const leafy = new THREE.MeshStandardMaterial({ roughness: 0.85 });
   const blobs = [];
   for (const fl of HERO) {
@@ -345,7 +363,7 @@ coreMesh.receiveShadow = true;
     const NX = path.length - 1, NY = 90, cols = NX + 1, rows = NY + 2, mid = wingN + arcN / 2;
     const P = new Float32Array(cols * rows * 3), TH = new Float32Array(cols * rows), YF = new Float32Array(cols * rows);
     for (let a = 0; a <= NX; a++) {
-      const [px, py, nx, ny] = path[a], u = (a - mid) * step;
+      const [px, py, nx, ny] = path[a], u = (a - mid) * step, junc = THREE.MathUtils.smoothstep(Math.min(Math.abs(a - wingN), Math.abs(a - wingN - arcN)) * step, 0, 10);
       const top = hAt(...cellAt(px - nx * 12, py - ny * 12)), foot = hAt(...cellAt(px + nx * 9, py + ny * 9));
       const y0 = Math.min(foot, top - 4) - 3, edge = THREE.MathUtils.smoothstep(Math.abs(u), 0, 0) ;
       const behind = THREE.MathUtils.smoothstep(Math.abs(u), 4, 22);   // smooth right behind the water
@@ -356,7 +374,8 @@ coreMesh.receiveShadow = true;
           const col = Math.pow(Math.abs(Math.sin(u / 1.25 + fbm(u / 9, y / 20) * 3)), 0.5);
           const ledge = THREE.MathUtils.smoothstep(vn(u / 30, y / 9), 0.6, 0.9);
           inset = (1.1 * col + 3.2 * fbm(u / 16, y / 12) + 1.8 * ledge) * (0.3 + 0.7 * behind) * (yf < 0.04 ? yf / 0.04 : 1);
-        } else inset = -12;   // the cap, folding back onto the plateau
+          inset *= junc;
+        } else inset = -12 * junc;   // the cap, folding back onto the plateau
         P[k * 3] = px + nx * inset; P[k * 3 + 1] = y; P[k * 3 + 2] = -(py + ny * inset);
         TH[k] = u; YF[k] = b <= NY ? yf : 1.01;
       }
@@ -375,10 +394,10 @@ coreMesh.receiveShadow = true;
       const moss = yf > 1 ? 1 : THREE.MathUtils.clamp(up * 0.95 + (1 - yf) * 0.75 * m2 + (m2 > 0.58 ? 0.4 : 0), 0, 1);
       const wet = Math.exp(-(u * u) / 288) * 0.45 * (1 - yf * 0.5);
       const shade = 0.78 + 0.6 * fbm(u / 3, y / 3), lichen = vn(u / 11, y / 11) > 0.72 ? 1 : 0;
-      const rr = 0.22 * shade + lichen * 0.06, rg = 0.2 * shade + lichen * 0.04, rb = 0.18 * shade;
-      const mr = 0.17 + 0.16 * m2, mg = 0.29 + 0.22 * m2, mb = 0.07 + 0.06 * m2;
+      const rr = 0.3 * shade + lichen * 0.08, rg = 0.27 * shade + lichen * 0.05, rb = 0.24 * shade;
+      const mr = 0.24 + 0.16 * m2, mg = 0.38 + 0.2 * m2, mb = 0.1 + 0.06 * m2;
       const dark = 1 - wet * 0.5;
-      col[k * 3] = (rr + (mr - rr) * moss) * dark; col[k * 3 + 1] = (rg + (mg - rg) * moss) * dark; col[k * 3 + 2] = (rb + (mb - rb) * moss) * dark;
+      col[k * 3] = Math.pow((rr + (mr - rr) * moss) * dark, 2.2); col[k * 3 + 1] = Math.pow((rg + (mg - rg) * moss) * dark, 2.2); col[k * 3 + 2] = Math.pow((rb + (mb - rb) * moss) * dark, 2.2);
       if (yf <= 1 && up > 0.5 && hn(u * 1.7, y * 2.3) < 0.2 && Math.abs(u) > 6) blobs.push([P[k * 3] + N[k * 3] * 0.6, y + 0.4, P[k * 3 + 2] + N[k * 3 + 2] * 0.6, 0.8 + hn(u, y) * 2.2, m2]);
     }
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
@@ -390,7 +409,7 @@ coreMesh.receiveShadow = true;
     for (let i = 0; i < n; i++) {
       const [x, y, z, sc, t] = blobs[Math.floor(i * blobs.length / n)];
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hn(x, z) * 6.28); m.compose(p.set(x, y, z), q, s.set(sc, sc * (0.7 + t * 0.6), sc));
-      im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(0.2 + t * 0.22, 0.34 + t * 0.26, 0.09 + t * 0.07));
+      im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(0.22 + t * 0.2, 0.38 + t * 0.24, 0.1 + t * 0.06, THREE.SRGBColorSpace));
     }
     im.castShadow = im.receiveShadow = true; scene.add(im);
   }
@@ -630,11 +649,26 @@ const cardDepth = new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPac
 let rnd = 12345; const rand = () => ((rnd = (rnd * 16807) % 2147483647) / 2147483647);
 const nT = treeData.length / 5, plan = [];
 for (let i = 0; i < nT; i++) {
-  const x = treeData[i * 5], y = treeData[i * 5 + 1], g = treeData[i * 5 + 2], h = treeData[i * 5 + 3];
+  const x = treeData[i * 5], y = treeData[i * 5 + 1], h = treeData[i * 5 + 3], g = hAt(...cellAt(x, y));
   if (h < 5 || h > 80 || g < waterY + 0.5 || carvedAt(x, y) || clearAt(x, y)) continue;
   const nearWater = g < waterY + 14, r = rand();
   const sp = pickSpecies(g, h, nearWater, r);
   plan.push({ x, y, g, h, sp, rot: rand() * Math.PI * 2, wide: 0.85 + rand() * 0.35, tint: rand() });
+}
+{
+  const maple = Math.max(0, SPECIES.findIndex((s) => s.broad && /maple/i.test(s.name)) >= 0 ? SPECIES.findIndex((s) => s.broad && /maple/i.test(s.name)) : SPECIES.findIndex((s) => s.broad));
+  if (SPECIES[maple] && SPECIES[maple].broad) for (const fl of HERO) {
+    const spots = [];
+    for (const fr of [0.2, 0.42, 0.64, 0.85]) for (const sd of [-1, 1]) {
+      const off = sd * (30 + rand() * 22), px = fl.plaza[0] + (fl.foot[0] - fl.plaza[0]) * fr + fl.es.x * off, py = fl.plaza[1] + (fl.foot[1] - fl.plaza[1]) * fr + fl.es.y * off;
+      spots.push([px, py]);
+    }
+    for (const sd of [-1, 1]) spots.push([fl.C[0] + fl.es.x * sd * (fl.R + 18) + fl.e.x * 20, fl.C[1] + fl.es.y * sd * (fl.R + 18) + fl.e.y * 20]);
+    for (const [x, y] of spots) {
+      if (carvedAt(x, y)) continue;
+      plan.push({ x, y, g: hAt(...cellAt(x, y)), h: 19 + rand() * 8, sp: maple, rot: rand() * 6.283, wide: 1.15 + rand() * 0.3, tint: rand(), glow: true });
+    }
+  }
 }
 // understory, clumped round the trees: sword fern and salal at the roots
 const fernGeo = mergeGeometries(Array.from({ length: 6 }, (_, k) => {
@@ -708,7 +742,8 @@ const buckets = SPECIES.map((sp, k) => {
   list.forEach((t, n) => {
     qq.setFromAxisAngle(up, t.rot); const w = t.h * (sp.broad ? 0.9 : 0.75) * t.wide;
     mtx.compose(pv.set(t.x, t.g - 0.5, -t.y), qq, sv.set(w, t.h, w)); mtx.toArray(mats, n * 16);
-    groundColour(coreAt(t.x, t.y), cc).multiply(TINT[k]).multiplyScalar(0.9 + t.tint * 0.25);
+    if (t.glow) cc.setRGB(0.62 + t.tint * 0.12, 0.82, 0.2, THREE.SRGBColorSpace).multiplyScalar(0.62);   // new leaves with the sun through them
+    else groundColour(coreAt(t.x, t.y), cc).multiply(TINT[k]).multiplyScalar(0.9 + t.tint * 0.25);
     colsFar.set([cc.r * 1.9, cc.g * 1.9, cc.b * 1.9], n * 3);   // the silhouette's paint is light green, like the needle cards
     cols.set([cc.r * 2.1, cc.g * 2.1, cc.b * 2.1], n * 3);   // the needle texture is light green; this brings it back to the ground's tone
   });
@@ -944,18 +979,54 @@ for (const ab of (Array.isArray(meta.features) ? meta.features : []).filter((x) 
   const fl = FALLS.find((x) => x.name === ab.near) || FALLS[0];
   if (!fl) continue;
   const a = new THREE.Vector3(ab.a[0], 0, -ab.a[1]), b = new THREE.Vector3(ab.b[0], 0, -ab.b[1]);
-  const mid = a.clone().lerp(b, 0.5), span = a.distanceTo(b) + 8, dir = b.clone().sub(a).normalize();
+  const mid = a.clone().lerp(b, 0.5), span = Math.max(24, a.distanceTo(b) + 8), dir = b.clone().sub(a).normalize();
   a.copy(mid).addScaledVector(dir, -span / 2); b.copy(mid).addScaledVector(dir, span / 2);
-  const deck = fl.lipY + 11, parts = [], stone = new THREE.MeshStandardMaterial({ color: 0xb3ab9f, roughness: 0.9 });
-  const seg = (p, q, wdt, hgt) => { const g = new THREE.BoxGeometry(p.distanceTo(q) + 0.4, hgt, wdt); g.rotateY(-Math.atan2(q.z - p.z, q.x - p.x)); const c = p.clone().lerp(q, 0.5); g.translate(c.x, c.y, c.z); parts.push(g); };
-  const N = 14, arch = (t) => a.clone().lerp(b, t).setY(deck - 1 - 7 * (1 - (2 * t - 1) ** 2) * 0 - 7 * (1 - (1 - (2 * t - 1) ** 2)));
+  const deck = fl.lipY + 14, parts = [], stone = new THREE.MeshStandardMaterial({ color: 0xe6e1d6, roughness: 0.8 });
+  const X = new THREE.Vector3(1, 0, 0);
+  const seg = (p, q, wdt, hgt) => {   // a beam from p to q, pitched to follow them
+    const L = p.distanceTo(q), g = new THREE.BoxGeometry(L + 0.05, hgt, wdt);
+    g.applyQuaternion(new THREE.Quaternion().setFromUnitVectors(X, q.clone().sub(p).normalize()));
+    const c = p.clone().lerp(q, 0.5); g.translate(c.x, c.y, c.z); parts.push(g);
+  };
+  const post = (p, top, wdt) => { const g = new THREE.BoxGeometry(wdt, Math.max(0.05, top - p.y), wdt); g.translate(p.x, (p.y + top) / 2, p.z); parts.push(g); };
+  const side = new THREE.Vector3(-dir.z, 0, dir.x);
+  const rise = Math.min(9, span * 0.33), at = (t) => a.clone().lerp(b, t);
+  const deckY = (t) => deck + 0.5 * (1 - (2 * t - 1) ** 2), archY = (t) => deck - 1.2 - rise * (2 * t - 1) ** 2;
+  const N = 40;
   for (let k = 0; k < N; k++) {
-    const t0 = k / N, t1 = (k + 1) / N, p0 = a.clone().lerp(b, t0).setY(deck + 0.6 * (1 - (2 * t0 - 1) ** 2)), p1 = a.clone().lerp(b, t1).setY(deck + 0.6 * (1 - (2 * t1 - 1) ** 2));
-    seg(p0, p1, 3.2, 0.8);                                                            // the deck, a gentle hump
-    seg(arch(t0), arch(t1), 2.8, 1.4);                                                // the arch ring under it
-    const side = new THREE.Vector3(-dir.z, 0, dir.x).multiplyScalar(1.5);
-    seg(p0.clone().add(side).setY(p0.y + 0.9), p1.clone().add(side).setY(p1.y + 0.9), 0.25, 1.0);   // parapets
-    seg(p0.clone().sub(side).setY(p0.y + 0.9), p1.clone().sub(side).setY(p1.y + 0.9), 0.25, 1.0);
+    const t0 = k / N, t1 = (k + 1) / N;
+    seg(at(t0).setY(deckY(t0)), at(t1).setY(deckY(t1)), 3.0, 0.7);                       // the deck
+    seg(at(t0).setY(archY(t0)), at(t1).setY(archY(t1)), 2.4, 1.1);                       // the arch ring
+    for (const sd of [-1.4, 1.4]) seg(at(t0).addScaledVector(side, sd).setY(deckY(t0) + 1.05), at(t1).addScaledVector(side, sd).setY(deckY(t1) + 1.05), 0.2, 0.18);   // handrails
+  }
+  for (let k = 0; k <= 48; k++) { const t = k / 48; for (const sd of [-1.4, 1.4]) post(at(t).addScaledVector(side, sd).setY(deckY(t) + 0.35), deckY(t) + 1.0, 0.13); }   // balusters
+  for (let k = 1; k < 14; k++) { const t = k / 14; for (const sd of [-0.95, 0.95]) post(at(t).addScaledVector(side, sd).setY(archY(t) + 0.5), deckY(t) - 0.3, 0.38); }   // the little columns between arch and deck
+  const rockParts = [];
+  for (const t of [0, 1]) { const p = at(t).addScaledVector(dir, t ? 2.5 : -2.5), g0 = sampleHeight(p.x, -p.z); const g = new THREE.CylinderGeometry(4, 4 + (deck - g0) * 0.28, deck - g0 + 1, 9, 6); { const q = g.attributes.position; for (let i = 0; i < q.count; i++) { const k = 1 + (hn(q.getX(i) * 0.7 + t * 9, q.getY(i) * 0.4) - 0.5) * 0.45; q.setX(i, q.getX(i) * k); q.setZ(i, q.getZ(i) * k); } g.computeVertexNormals(); } g.translate(p.x, (deck + g0) / 2 - 0.5, p.z); rockParts.push(g.toNonIndexed()); }   // the rock the bridge springs from
+  { const m = new THREE.Mesh(mergeGeometries(rockParts), new THREE.MeshStandardMaterial({ color: 0x3a4a2a, roughness: 0.95, flatShading: true })); m.castShadow = m.receiveShadow = true; scene.add(m); }
+  {
+    const hero = HERO.find((x) => x.rim) || HERO[0];
+    if (hero && hero.plaza) {
+      const A = [a.x, -a.z], B = [b.x, -b.z], P = hero.plaza, e = hero.e, es = hero.es;
+      const plazaSide = (Math.hypot(A[0] - P[0], A[1] - P[1]) < Math.hypot(B[0] - P[0], B[1] - P[1])) ? [A, B] : [B, A];
+      const [near, far] = plazaSide, sideOf = (Q) => Math.sign((Q[0] - P[0]) * es.x + (Q[1] - P[1]) * es.y) || 1;
+      const out = (Q, k, f2) => [Q[0] + es.x * sideOf(Q) * k + e.x * f2, Q[1] + es.y * sideOf(Q) * k + e.y * f2];
+      const loops = [[P, out(near, 22, 45), out(near, 6, 14), near], [far, out(far, 8, 12), out(far, 28, 40), [P[0] + es.x * sideOf(far) * 12, P[1] + es.y * sideOf(far) * 12]]];
+      const pathMat = new THREE.MeshStandardMaterial({ color: 0x8e877b, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      for (const pts of loops) {
+        const dense = [];
+        for (let i = 0; i + 1 < pts.length; i++) { const [p, q] = [pts[i], pts[i + 1]], n = Math.max(2, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 2)); for (let k = 0; k < n; k++) dense.push([p[0] + (q[0] - p[0]) * k / n, p[1] + (q[1] - p[1]) * k / n]); }
+        dense.push(pts[pts.length - 1]);
+        const pos = [], idx = [];
+        dense.forEach((p, i) => {
+          const q = dense[Math.min(dense.length - 1, i + 1)], o = dense[Math.max(0, i - 1)], dx = q[0] - o[0], dy = q[1] - o[1], L = Math.hypot(dx, dy) || 1, nxp = -dy / L * 1.2, nyp = dx / L * 1.2;
+          for (const sd of [-1, 1]) { const x = p[0] + nxp * sd, y = p[1] + nyp * sd; pos.push(x, Math.max(smoothHeight(x, y), i === dense.length - 1 ? deck - 0.3 : -1e9) + 0.25, -y); }
+          if (i) idx.push((i - 1) * 2, i * 2, (i - 1) * 2 + 1, i * 2, i * 2 + 1, (i - 1) * 2 + 1);
+        });
+        const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
+        const m = new THREE.Mesh(g, pathMat); m.receiveShadow = true; scene.add(m);
+      }
+    }
   }
   const bridgeMesh = new THREE.Mesh(mergeGeometries(parts.map((g) => g.toNonIndexed())), stone); bridgeMesh.castShadow = bridgeMesh.receiveShadow = true; scene.add(bridgeMesh);
 }
