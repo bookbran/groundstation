@@ -287,6 +287,7 @@ const hn = (x, y) => { const s = Math.sin(x * 127.1 + y * 311.7) * 43758.5453; r
 const vn = (x, y) => { const i = Math.floor(x), j = Math.floor(y), fx = x - i, fy = y - j, u = fx * fx * (3 - 2 * fx), w = fy * fy * (3 - 2 * fy);
   return (hn(i, j) * (1 - u) + hn(i + 1, j) * u) * (1 - w) + (hn(i, j + 1) * (1 - u) + hn(i + 1, j + 1) * u) * w; };
 const fbm = (x, y) => vn(x, y) * 0.5 + vn(x * 2.1 + 5.2, y * 2.1) * 0.3 + vn(x * 4.3, y * 4.3 + 1.7) * 0.2;
+const wob = (fl, u) => ((fbm(u / 45 + fl.h, 3.1) - 0.5) * 30 + (fbm(u / 11, 7.7) - 0.5) * 8) * Math.min(1, Math.abs(u) / 25);
 const HERO = FALLS.filter((fl) => fl.h >= 60).sort((a, b) => b.h - a.h).slice(0, 3);
 for (const fl of HERO) {
   // which way the land falls away here, over a few hundred metres: the face of the cliff
@@ -320,7 +321,8 @@ for (const fl of HERO) {
     for (const o of others) { const dd = Math.hypot(wx - o.xy[0], wy - o.xy[1]); if (dd < 90) w *= THREE.MathUtils.smoothstep(dd, 40, 90); }
     if (w <= 0) continue;
     const k = j * cgw + i, inArc = Math.abs(t) < R;
-    const below = inArc ? (dist < R + 3 || s > 0) : s > -3;
+    const u = inArc && s < 0 ? Math.atan2(t, -s) * R : Math.sign(t) * (Math.PI * R / 2 + Math.abs(t) - R), o = wob(fl, u);
+    const below = inArc ? (s >= 0 || dist < R + o + 3) : s > -3 - o;
     if (below) {   // the bowl floor, then a talus slope easing down to the valley
       const target = s <= sFoot ? Math.max(lowPool, fl.poolY - Math.max(0, s) * 0.32) : Math.max(lo - 2, lowPool - (s - sFoot) * (inArc || Math.abs(t) < R + 40 ? 0.07 : 0.2));
       coreH[k] += (Math.min(coreH[k], target) - coreH[k]) * w;
@@ -329,13 +331,13 @@ for (const fl of HERO) {
         const along = (wx - rim.m[0]) * rim.ax[0] + (wy - rim.m[1]) * rim.ax[1];   // across the creek, metres from its middle
         const slot = 6.5 + Math.max(0, s - rim.sR) * 0.3;
         if (Math.abs(along) > slot) {
-          const ds = s - rim.sR, ridge = rim.top - 1 - Math.max(0, Math.abs(ds) - 5) * (ds < 0 ? 1.4 : 0.75) - Math.max(0, Math.abs(t) - R) * 0.6 - THREE.MathUtils.smoothstep(Math.abs(along) - slot, 0, 3) * 0 + (1 - THREE.MathUtils.smoothstep(Math.abs(along) - slot, 0, 2.5)) * -2;
+          const ds = s - rim.sR, ridge = rim.top - 1 - Math.pow(Math.max(0, Math.abs(ds) - 4), 1.25) * (ds < 0 ? 0.32 : 0.26) - Math.max(0, Math.abs(t) - R) * 0.35 + (fbm(wx / 14, wy / 14) - 0.5) * 6 - THREE.MathUtils.smoothstep(Math.abs(along) - slot, 0, 3) * 0 + (1 - THREE.MathUtils.smoothstep(Math.abs(along) - slot, 0, 2.5)) * -2;
           if (ridge > coreH[k]) { coreH[k] += (ridge - coreH[k]) * w; if (ridge - coreH[k] < 3) carved[k] = 0; }
         }
       }
     } else {       // the plateau, held up at the lip just behind the edge
-      const dw = inArc ? dist - R : -s;
-      if (dw < 50 && !carved[k]) coreH[k] += (Math.max(coreH[k], fl.lipY + 0.5) - coreH[k]) * w * (1 - THREE.MathUtils.smoothstep(dw, 25, 50));
+      const dw = inArc ? dist - R - o : -s - o;
+      if (dw < 50 && !carved[k]) coreH[k] += (Math.max(coreH[k], fl.lipY + 0.5 + (fbm(u / 30 + 2, 1.3) - 0.5) * 18 * Math.min(1, Math.abs(u) / 40)) - coreH[k]) * w * (1 - THREE.MathUtils.smoothstep(dw, 25, 50));
     }
   }
 }
@@ -352,7 +354,7 @@ coreMesh.receiveShadow = true;
   const leafy = new THREE.MeshStandardMaterial({ roughness: 0.85 });
   const blobs = [];
   for (const fl of HERO) {
-    const R = fl.R, L = fl.L, C = fl.C, e = fl.e, es = fl.es;
+    const R = fl.R, L = fl.L + 70, C = fl.C, e = fl.e, es = fl.es;
     // the path: a wing in from the left, the half circle behind the bowl, a wing out to the right;
     // each point with the way the face looks (into the bowl, or out over the valley)
     const path = [];
@@ -360,12 +362,20 @@ coreMesh.receiveShadow = true;
     for (let a = 0; a <= wingN; a++) { const tt = -L + (L - R) * a / wingN; path.push([C[0] + es.x * tt, C[1] + es.y * tt, e.x, e.y]); }
     for (let a = 1; a < arcN; a++) { const th = -Math.PI / 2 + Math.PI * a / arcN, dx = -e.x * Math.cos(th) + es.x * Math.sin(th), dy = -e.y * Math.cos(th) + es.y * Math.sin(th); path.push([C[0] + dx * R, C[1] + dy * R, -dx, -dy]); }
     for (let a = 0; a <= wingN; a++) { const tt = R + (L - R) * a / wingN; path.push([C[0] + es.x * tt, C[1] + es.y * tt, e.x, e.y]); }
+    {
+      const m0 = wingN + arcN / 2, base = path.map((p, a) => { const u = (a - m0) * step, o = wob(fl, u); return [p[0] - p[2] * o, p[1] - p[3] * o, p[2], p[3]]; });
+      for (let a = 0; a < base.length; a++) {
+        const p = base[Math.max(0, a - 1)], q = base[Math.min(base.length - 1, a + 1)], tx = q[0] - p[0], ty = q[1] - p[1], tl = Math.hypot(tx, ty) || 1;
+        let nx2 = -ty / tl, ny2 = tx / tl; if (nx2 * base[a][2] + ny2 * base[a][3] < 0) { nx2 = -nx2; ny2 = -ny2; }
+        path[a] = [base[a][0], base[a][1], nx2, ny2];
+      }
+    }
     const NX = path.length - 1, NY = 90, cols = NX + 1, rows = NY + 2, mid = wingN + arcN / 2;
     const P = new Float32Array(cols * rows * 3), TH = new Float32Array(cols * rows), YF = new Float32Array(cols * rows);
     for (let a = 0; a <= NX; a++) {
       const [px, py, nx, ny] = path[a], u = (a - mid) * step, junc = THREE.MathUtils.smoothstep(Math.min(Math.abs(a - wingN), Math.abs(a - wingN - arcN)) * step, 0, 10);
       const top = hAt(...cellAt(px - nx * 12, py - ny * 12)), foot = hAt(...cellAt(px + nx * 9, py + ny * 9));
-      const y0 = Math.min(foot, top - 4) - 3, edge = THREE.MathUtils.smoothstep(Math.abs(u), 0, 0) ;
+      const y0 = top - foot < 2 ? top - 0.6 : Math.min(foot, top - 4) - 3, edge = THREE.MathUtils.smoothstep(Math.abs(u), 0, 0) ;
       const behind = THREE.MathUtils.smoothstep(Math.abs(u), 4, 22);   // smooth right behind the water
       for (let b = 0; b < rows; b++) {
         const k = a * rows + b, yf = Math.min(1, b / NY), y = b <= NY ? y0 + (top + 0.6 - y0) * yf : top + 0.4;
@@ -373,7 +383,7 @@ coreMesh.receiveShadow = true;
         if (b <= NY) {
           const col = Math.pow(Math.abs(Math.sin(u / 1.25 + fbm(u / 9, y / 20) * 3)), 0.5);
           const ledge = THREE.MathUtils.smoothstep(vn(u / 30, y / 9), 0.6, 0.9);
-          inset = (1.1 * col + 3.2 * fbm(u / 16, y / 12) + 1.8 * ledge) * (0.3 + 0.7 * behind) * (yf < 0.04 ? yf / 0.04 : 1);
+          inset = (1.1 * col + 3.2 * fbm(u / 16, y / 12) + 1.8 * ledge + 7 * fbm(u / 26 + 9, y / 34) + 3 * Math.abs(Math.sin(y / 9 + fbm(u / 20, 4.4) * 4))) * (0.3 + 0.7 * behind) * (yf < 0.04 ? yf / 0.04 : 1);
           inset *= junc;
         } else inset = -12 * junc;   // the cap, folding back onto the plateau
         P[k * 3] = px + nx * inset; P[k * 3 + 1] = y; P[k * 3 + 2] = -(py + ny * inset);
@@ -391,11 +401,11 @@ coreMesh.receiveShadow = true;
     const col = new Float32Array(P.length);
     for (let k = 0; k < cols * rows; k++) {
       const u = TH[k], y = P[k * 3 + 1], yf = YF[k], up = THREE.MathUtils.clamp((N[k * 3 + 1] - 0.05) / 0.45, 0, 1), m2 = fbm(u / 7 + 3, y / 7);
-      const moss = yf > 1 ? 1 : THREE.MathUtils.clamp(up * 0.95 + (1 - yf) * 0.75 * m2 + (m2 > 0.58 ? 0.4 : 0), 0, 1);
+      const moss = yf > 1 ? 1 : THREE.MathUtils.clamp(up * 0.8 + (1 - yf) * 0.5 * m2 + (m2 > 0.66 ? 0.25 : 0), 0, 1);
       const wet = Math.exp(-(u * u) / 288) * 0.45 * (1 - yf * 0.5);
       const shade = 0.78 + 0.6 * fbm(u / 3, y / 3), lichen = vn(u / 11, y / 11) > 0.72 ? 1 : 0;
-      const rr = 0.3 * shade + lichen * 0.08, rg = 0.27 * shade + lichen * 0.05, rb = 0.24 * shade;
-      const mr = 0.24 + 0.16 * m2, mg = 0.38 + 0.2 * m2, mb = 0.1 + 0.06 * m2;
+      const rr = 0.27 * shade + lichen * 0.05, rg = 0.25 * shade + lichen * 0.04, rb = 0.22 * shade;
+      const mr = 0.15 + 0.1 * m2, mg = 0.24 + 0.13 * m2, mb = 0.07 + 0.04 * m2;
       const dark = 1 - wet * 0.5;
       col[k * 3] = Math.pow((rr + (mr - rr) * moss) * dark, 2.2); col[k * 3 + 1] = Math.pow((rg + (mg - rg) * moss) * dark, 2.2); col[k * 3 + 2] = Math.pow((rb + (mb - rb) * moss) * dark, 2.2);
       if (yf <= 1 && up > 0.5 && hn(u * 1.7, y * 2.3) < 0.2 && Math.abs(u) > 6) blobs.push([P[k * 3] + N[k * 3] * 0.6, y + 0.4, P[k * 3 + 2] + N[k * 3 + 2] * 0.6, 0.8 + hn(u, y) * 2.2, m2]);
@@ -409,7 +419,7 @@ coreMesh.receiveShadow = true;
     for (let i = 0; i < n; i++) {
       const [x, y, z, sc, t] = blobs[Math.floor(i * blobs.length / n)];
       q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), hn(x, z) * 6.28); m.compose(p.set(x, y, z), q, s.set(sc, sc * (0.7 + t * 0.6), sc));
-      im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(0.22 + t * 0.2, 0.38 + t * 0.24, 0.1 + t * 0.06, THREE.SRGBColorSpace));
+      im.setMatrixAt(i, m); im.setColorAt(i, c.setRGB(0.13 + t * 0.12, 0.22 + t * 0.16, 0.07 + t * 0.05, THREE.SRGBColorSpace));
     }
     im.castShadow = im.receiveShadow = true; scene.add(im);
   }
@@ -820,6 +830,79 @@ const perchGeo = (() => {   // a small bird at rest, one unit long: body, head, 
   const tail = new THREE.BoxGeometry(0.16, 0.05, 0.45).translate(0, 0.3, -0.62);
   return mergeGeometries([body, head, tail].map((g) => { g.deleteAttribute('uv'); return g.index ? g.toNonIndexed() : g; }));
 })();
+// BIRDS THAT LOOK LIKE THEMSELVES (2026-10-31): a body, head, beak, fanned tail and real
+// wing outline per species (broad and fingered for raptors and ravens, short and round
+// for songbirds), painted from the study's plumage: back, belly, breast, head, wing,
+// underwing, tail, beak, and a crest or hood where the bird has one. Wings have a top
+// and an underside, so an osprey overhead shows its white underwings.
+const PAINT = (b) => {
+  const p = b.plumage || {}, base = '#' + new THREE.Color(hex(b.colour, 0x2b2622)).getHexString();
+  const pick = (...k) => { for (const x of k) if (p[x]) return p[x]; return null; };
+  const back = pick('back') || base, belly = pick('belly') || '#' + new THREE.Color(back).lerp(new THREE.Color(0xd8d0c4), 0.55).getHexString();
+  return { back, belly, breast: pick('breast', 'belly') || belly, head: pick('head', 'back') || back, wing: pick('wing', 'back') || back,
+    under: pick('underwing', 'belly', 'wing') || belly, tips: pick('tips', 'wing', 'back') || back, tail: pick('tail', 'back') || back,
+    beak: pick('beak') || '#2a2622', crest: !!p.crest, streaks: !!p.streaks, eye: pick('eye') || '#0d0b0a' };
+};
+const colourise = (g, fn) => {   // paint a part per vertex: fn(x, y, z) gives a colour
+  g = g.index ? g.toNonIndexed() : g; if (g.attributes.uv) g.deleteAttribute('uv');
+  const p = g.attributes.position, c = new Float32Array(p.count * 3), col = new THREE.Color();
+  for (let i = 0; i < p.count; i++) {
+    col.set(fn(p.getX(i), p.getY(i), p.getZ(i)));
+    const j = 0.94 + 0.12 * (Math.sin(p.getX(i) * 91.7 + p.getZ(i) * 53.1 + p.getY(i) * 17.3) * 0.5 + 0.5);   // feathers are never one flat colour
+    c[i * 3] = col.r * j; c[i * 3 + 1] = col.g * j; c[i * 3 + 2] = col.b * j;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(c, 3)); return g;
+};
+const streak = (pa, a, b2) => (x, y, z) => (pa.streaks && Math.sin(z * 60 + Math.sin(x * 40) * 2) > 0.45 ? b2 : a);
+function flyingBird(b) {   // wingspan 2 units, x across, +z forward
+  const pa = PAINT(b), raptor = isRaptor(b), corvid = /Corvid/.test(b.family || '') || /raven|crow|jay|magpie/i.test(b.name);
+  const L = raptor ? 0.86 : corvid ? 1.0 : 1.25, rb = L * 0.12, parts = [];
+  const body = new THREE.SphereGeometry(1, 12, 8).scale(rb, rb * 0.9, L * 0.48);
+  parts.push(colourise(body, (x, y, z) => (y > rb * 0.1 ? pa.back : z > L * 0.12 ? pa.breast : streak(pa, pa.belly, pa.back)(x, y, z))));
+  const hr = rb * (raptor ? 0.95 : 1.05), hz = L * 0.47;
+  parts.push(colourise(new THREE.SphereGeometry(hr, 10, 8).translate(0, rb * 0.15, hz), (x, y, z) => (z > hz + hr * 0.55 && Math.abs(x) > hr * 0.35 && y > rb * 0.2 ? pa.eye : pa.head)));
+  parts.push(colourise(new THREE.ConeGeometry(hr * (raptor ? 0.45 : 0.3), hr * (raptor ? 0.9 : 1.1), 6).rotateX(Math.PI / 2).translate(0, rb * (raptor ? 0.02 : 0.1), hz + hr * 1.15), () => pa.beak));
+  // the tail, a fan with a top and an underside
+  const tail = new THREE.Shape(); const tw = raptor ? L * 0.2 : L * 0.16, tl = raptor ? L * 0.32 : L * 0.4;
+  tail.moveTo(-rb * 0.6, 0); tail.lineTo(-tw, -tl); tail.quadraticCurveTo(0, -tl * (corvid ? 1.12 : 1.04), tw, -tl); tail.lineTo(rb * 0.6, 0);
+  const tg = new THREE.ShapeGeometry(tail).rotateX(Math.PI / 2).translate(0, rb * 0.1, -L * 0.36);
+  parts.push(colourise(tg, () => pa.tail), colourise(tg.clone().translate(0, -0.004, 0), () => pa.tail));
+  // the wings: an outline along the span, broad with spread primaries for soarers
+  const N = 12, cRoot = raptor ? 0.46 : corvid ? 0.4 : 0.34;
+  for (const sd of [-1, 1]) {
+    const top = [], bot = [];
+    const le = (u) => rb * 0.5 + 0.06 * u - (raptor ? 0.05 : 0.14) * u * u, ch = (u) => cRoot * (raptor || corvid ? 1 - 0.18 * u : 1 - 0.62 * u) * (u > 0.9 ? 1 - (u - 0.9) * (raptor ? 3 : 6) : 1);
+    for (let k = 0; k < N; k++) {
+      const u0 = k / N, u1 = (k + 1) / N, x0 = sd * (rb + (1 - rb) * u0), x1 = sd * (rb + (1 - rb) * u1);
+      const a = [x0, 0, le(u0)], bq = [x1, 0, le(u1)], c = [x1, 0, le(u1) - ch(u1)], d = [x0, 0, le(u0) - ch(u0)];
+      const tri = (arr, p, q, r) => arr.push(...p, ...q, ...r);
+      if (sd > 0) { tri(top, a, c, bq); tri(top, a, d, c); tri(bot, a, bq, c); tri(bot, a, c, d); }
+      else { tri(top, a, bq, c); tri(top, a, c, d); tri(bot, a, c, bq); tri(bot, a, d, c); }
+    }
+    if (raptor || corvid) for (let f2 = 0; f2 < 5; f2++) {   // fingered primaries at the tip
+      const z0 = le(0.9) - ch(0.9) * (f2 + 0.5) / 5, x0 = sd * (rb + (1 - rb) * 0.9), x1 = sd * (1 + 0.07 + 0.02 * (2 - Math.abs(f2 - 2))), z1 = z0 - 0.03 * (f2 - 1), w2 = ch(0.9) / 12;
+      const p = [x0, 0, z0 + w2], q = [x1, 0, z1], r = [x0, 0, z0 - w2];
+      if (sd > 0) { top.push(...p, ...r, ...q); bot.push(...p, ...q, ...r); } else { top.push(...p, ...q, ...r); bot.push(...p, ...r, ...q); }
+    }
+    const mk = (arr, dy) => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(arr.map((v, i) => (i % 3 === 1 ? v + dy : v)), 3)); g.computeVertexNormals(); return g; };
+    const span = (x) => (Math.abs(x) - rb) / (1 - rb);
+    parts.push(colourise(mk(top, 0.002), (x, y, z) => (span(x) > 0.72 ? pa.tips : z > le(span(x)) - ch(span(x)) * 0.3 ? pa.back : pa.wing)));
+    parts.push(colourise(mk(bot, -0.002), (x, y, z) => (span(x) > 0.78 ? pa.tips : pa.under)));
+  }
+  return mergeGeometries(parts);
+}
+function perchedBird(b) {   // one unit long, +z forward
+  const pa = PAINT(b), parts = [], tilt = (g) => g.rotateX(-0.28);
+  const body = tilt(new THREE.SphereGeometry(0.5, 12, 9).scale(0.5, 0.48, 0.82)).translate(0, 0.42, 0);
+  parts.push(colourise(body, (x, y, z) => (y > 0.44 ? pa.back : z > 0.08 ? pa.breast : streak(pa, pa.belly, pa.back)(x, y, z))));
+  for (const sd of [-1, 1]) parts.push(colourise(tilt(new THREE.SphereGeometry(0.5, 8, 6).scale(0.12, 0.3, 0.72)).translate(sd * 0.21, 0.46, -0.08), () => pa.wing));   // folded wings
+  parts.push(colourise(new THREE.SphereGeometry(0.2, 10, 8).translate(0, 0.7, 0.36), (x, y, z) => (z > 0.46 && Math.abs(x) > 0.08 && y > 0.7 ? pa.eye : pa.head)));
+  if (pa.crest) parts.push(colourise(new THREE.ConeGeometry(0.1, 0.32, 6).rotateX(-0.7).translate(0, 0.92, 0.26), () => pa.head));
+  parts.push(colourise(new THREE.ConeGeometry(0.055, 0.2, 6).rotateX(Math.PI / 2).translate(0, 0.68, 0.62), () => pa.beak));
+  parts.push(colourise(new THREE.BoxGeometry(0.2, 0.04, 0.5).rotateX(0.35).translate(0, 0.34, -0.55), () => pa.tail));
+  for (const sd of [-1, 1]) parts.push(colourise(new THREE.CylinderGeometry(0.018, 0.018, 0.2, 4).translate(sd * 0.08, 0.1, 0.05), () => '#5a4a3a'));   // legs
+  return mergeGeometries(parts);
+}
 const isRaptor = (b) => /Accipitr|Pandion|Cathart|Falcon/.test((b.family || '') + (b.order || '')) || b.wingspan >= 1.4;
 const flocks = [], perched = [];
 for (const b of BIRDS) {
@@ -828,14 +911,16 @@ for (const b of BIRDS) {
     const raptor = isRaptor(b), n = Math.min(60, b.count || (raptor ? 3 : 9));
     const over = b.over || (/Pandion|Haliaeetus|Ardeid|Larid/.test((b.family || '') + (b.sci || '')) ? 'water' : 'forest');
     const altitude = b.altitude_m || (/Cathart/.test(b.family || '') ? 180 : raptor ? 95 : 45);
-    const mat = new THREE.MeshStandardMaterial({ color: colour, roughness: 0.8, side: THREE.DoubleSide });
+    const mat = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75 });
     mat.onBeforeCompile = (sh) => {
       sh.uniforms.uTime = U.uTime; sh.uniforms.uFlap = { value: raptor ? 2.4 : 7.0 };
       sh.vertexShader = 'uniform float uTime; uniform float uFlap;\n' + sh.vertexShader.replace('#include <begin_vertex>', `#include <begin_vertex>
         float ph = instanceMatrix[3].x * 0.37 + instanceMatrix[3].z * 0.21;
-        transformed.y += sin(uTime * uFlap + ph) * abs(transformed.x) * (uFlap < 3.0 ? 0.18 : 0.5);`);   // big birds soar, small ones beat
+        float ax = abs(transformed.x), beat = sin(uTime * uFlap + ph);
+        transformed.y += beat * (ax * (uFlap < 3.0 ? 0.16 : 0.42) + max(0.0, ax - 0.5) * (uFlap < 3.0 ? 0.1 : 0.35) * (0.5 + 0.5 * sin(uTime * uFlap + ph - 0.6)));
+        transformed.y += (uFlap < 3.0 ? 0.08 : 0.0) * ax;   // soarers hold their wings in a shallow V`);   // big birds soar, small ones beat
     };
-    const im = new THREE.InstancedMesh(wingGeo, mat, n); im.frustumCulled = false; scene.add(im);
+    const im = new THREE.InstancedMesh(flyingBird(b), mat, n); im.frustumCulled = false; im.castShadow = true; scene.add(im);
     const centres = [];
     for (let tries = 0; centres.length < Math.max(1, Math.ceil(n / (raptor ? 2 : 8))) && tries < 500; tries++) {
       const x = core.extent[0] + rand() * (core.extent[2] - core.extent[0]), y = core.extent[1] + rand() * (core.extent[3] - core.extent[1]);
@@ -849,8 +934,8 @@ for (const b of BIRDS) {
     flocks.push({ im, birds, name: b.name, info: b });
   } else {
     // on the ground, where there is ground: never in water or a carved fall
-    const n = Math.min(60, b.count || 36), mat = living(new THREE.MeshStandardMaterial({ color: colour, roughness: 0.75 }), false);
-    const im = new THREE.InstancedMesh(perchGeo, mat, n); im.frustumCulled = false; im.castShadow = true; scene.add(im);
+    const n = Math.min(60, b.count || 36), mat = living(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }), false);
+    const im = new THREE.InstancedMesh(perchedBird(b), mat, n); im.frustumCulled = false; im.castShadow = true; scene.add(im);
     const birds = [];
     for (let tries = 0; birds.length < n && tries < n * 30; tries++) {
       const x = core.extent[0] + rand() * (core.extent[2] - core.extent[0]), y = core.extent[1] + rand() * (core.extent[3] - core.extent[1]);
@@ -1012,7 +1097,7 @@ for (const ab of (Array.isArray(meta.features) ? meta.features : []).filter((x) 
       const [near, far] = plazaSide, sideOf = (Q) => Math.sign((Q[0] - P[0]) * es.x + (Q[1] - P[1]) * es.y) || 1;
       const out = (Q, k, f2) => [Q[0] + es.x * sideOf(Q) * k + e.x * f2, Q[1] + es.y * sideOf(Q) * k + e.y * f2];
       const loops = [[P, out(near, 22, 45), out(near, 6, 14), near], [far, out(far, 8, 12), out(far, 28, 40), [P[0] + es.x * sideOf(far) * 12, P[1] + es.y * sideOf(far) * 12]]];
-      const pathMat = new THREE.MeshStandardMaterial({ color: 0x8e877b, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const pathMat = new THREE.MeshStandardMaterial({ color: 0x5f584d, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
       for (const pts of loops) {
         const dense = [];
         for (let i = 0; i + 1 < pts.length; i++) { const [p, q] = [pts[i], pts[i + 1]], n = Math.max(2, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 2)); for (let k = 0; k < n; k++) dense.push([p[0] + (q[0] - p[0]) * k / n, p[1] + (q[1] - p[1]) * k / n]); }
@@ -1035,7 +1120,7 @@ for (const ab of (Array.isArray(meta.features) ? meta.features : []).filter((x) 
 // panner per voice, the listener riding the camera); and every waterfall's roar,
 // louder the taller it is. Off until asked: browsers start no sound unbidden.
 const SOUND = { ctx: null, on: false, buf: {}, next: {}, roar: [] };
-window.gsWorld = { SOUND, h: (x, y) => sampleHeight(x, y), HERO: typeof HERO !== 'undefined' ? HERO : null, get camera() { return camera; }, get controls() { return controls; }, FALLS, waterY: typeof waterY === 'number' ? waterY : null, snap: (q = 0.8) => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/jpeg', q); } };   // for scripted checks
+window.gsWorld = { SOUND, get flocks() { return flocks; }, get perched() { return perched; }, h: (x, y) => sampleHeight(x, y), HERO: typeof HERO !== 'undefined' ? HERO : null, get camera() { return camera; }, get controls() { return controls; }, FALLS, waterY: typeof waterY === 'number' ? waterY : null, snap: (q = 0.8) => { renderer.render(scene, camera); return renderer.domElement.toDataURL('image/jpeg', q); } };   // for scripted checks
 // THE MIX (2026-10-31): a layer for each kind of sound this place actually has, from what
 // the builder found nearby: falls, birds, wind in its own trees, and from OpenStreetMap
 // the roads, railways, stadiums and stages, playgrounds and runways. Each has a slider

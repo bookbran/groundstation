@@ -511,6 +511,10 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
         if v:
             blocks[f"snd-{b['key']}"] = base64.b64encode(v["bytes"]).decode()
             b["sound"] = {"file": f"sounds/{b['key']}-{v['type']}.mp3", "type": v["type"], "credit": v["credit"]}
+    for b in birds:   # the study's plumage, so each bird is painted like itself
+        pl = ((profile or {}).get('plumage') or {}).get(b['name'])
+        if pl:
+            b['plumage'] = pl
     portraits = {}
     trees_named = [(t.get("name"), t.get("sci")) for t in ((profile or {}).get("species") or []) if t.get("name")]
     for pname, (data, credit) in _portraits([(b["name"], b.get("sci")) for b in birds] + trees_named).items():
