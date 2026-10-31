@@ -1,6 +1,6 @@
 [project]
 name = "groundstation"
-version = "0.70.0"
+version = "0.71.0"
 description = "Earth data, agent-ready: an MCP server + Claude skill over the cloud-native geospatial stack (STAC, TiTiler, Gazet)"
 requires-python = ">=3.12,<3.15"
 license = "MIT"
@@ -28,6 +28,7 @@ Repository = "https://github.com/dannybauman/groundstation"
 [project.scripts]
 groundstation = "groundstation.server:main"
 groundstation-web = "groundstation.web:main"
+groundstation-maps = "groundstation.viewer:main"
 
 [dependency-groups]
 web = ["fastapi>=0.115", "uvicorn>=0.30"]
