@@ -171,6 +171,65 @@ def _buildings(core: list[float], crs: str, cx: float, cy: float, cap: int = 400
     return out
 
 
+def _soundscape(core, crs, cx, cy):
+    """What this place sounds like beyond its birds and water, from OpenStreetMap: the big
+    roads (traffic), railways, tramways and subways, runways (planes), stadiums and stages
+    (crowds) and playgrounds. Lines come in local metres, thinned to 60 points; places as a
+    point. The page synthesises each kind and gives it a slider."""
+    from rasterio.warp import transform as warp_xy
+    s, w, n, e = core[1], core[0], core[3], core[2]
+    bb = f'({s},{w},{n},{e})'
+    ask = lambda q: _json('https://overpass-api.de/api/interpreter?' + urllib.parse.urlencode({'data': q}), timeout=90).get('elements', [])
+    def local(lons, lats):
+        xs, ys = warp_xy('EPSG:4326', crs, lons, lats)
+        return [[round(x - cx, 1), round(y - cy, 1)] for x, y in zip(xs, ys)]
+    out = []
+    try:
+        lines = ask('[out:json][timeout:60];(' + f'way["highway"~"^(motorway|trunk|primary|secondary)$"]{bb};'
+                    f'way["railway"~"^(rail|light_rail|subway|tram)$"]{bb};way["aeroway"="runway"]{bb};' + ');out geom;')
+    except Exception:
+        lines = []
+    kinds = {'rail': 'train', 'light_rail': 'tram', 'tram': 'tram', 'subway': 'subway'}
+    for el in lines:
+        t, g = el.get('tags', {}), el.get('geometry') or []
+        if len(g) < 2 or t.get('service') in ('yard', 'siding', 'spur', 'crossover'):
+            continue
+        if 'highway' in t:
+            if t.get('tunnel') == 'yes':
+                continue
+            rec = {'kind': 'traffic', 'cls': t['highway']}
+        elif 'railway' in t:
+            rec = {'kind': kinds[t['railway']]}
+        else:
+            rec = {'kind': 'planes'}
+        step = max(1, len(g) // 60)
+        g = g[::step] + ([g[-1]] if (len(g) - 1) % step else [])
+        rec['pts'] = local([p['lon'] for p in g], [p['lat'] for p in g])
+        out.append(rec)
+    try:
+        places = ask('[out:json][timeout:60];(' + f'nwr["leisure"~"^(stadium|playground)$"]{bb};'
+                     f'nwr["amenity"~"^(theatre|music_venue|nightclub|arts_centre)$"]{bb};' + ');out center;')
+    except Exception:
+        places = []
+    count = {}
+    for el in places:
+        t = el.get('tags', {})
+        kind = 'play' if t.get('leisure') == 'playground' else 'crowd'
+        c = el.get('center') or ({'lat': el['lat'], 'lon': el['lon']} if 'lat' in el else None)
+        if not c or count.get(kind, 0) >= 12:
+            continue
+        count[kind] = count.get(kind, 0) + 1
+        out.append({'kind': kind, 'at': local([c['lon']], [c['lat']])[0], 'name': t.get('name', '')})
+    # the busiest few of each line kind, by length, so a city keeps its main roads
+    keep, seen = [], {}
+    for r in sorted(out, key=lambda r: -len(r.get('pts', []))):
+        k = r['kind'] + r.get('cls', '')
+        if seen.get(k, 0) < 25:
+            seen[k] = seen.get(k, 0) + 1
+            keep.append(r)
+    return keep
+
+
 def _features(core, crs, cx, cy):
     from rasterio.warp import transform as warp_xy
     """The place's set pieces from OpenStreetMap: every waterfall with its height and width,
@@ -445,6 +504,7 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
 
     buildings = _buildings(core, crs, cx, cy)
     features = _features(core, crs, cx, cy)
+    sounds = _soundscape(core, crs, cx, cy)
     birds = bird_life(core, profile)
     for b in birds:
         v = b.pop("voice")
@@ -468,7 +528,7 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
         "trees": {"measured": int(len(measured)), "estimated": int(len(estimated)), "tallest_m": round(float(trees[:, 3].max()), 1) if len(trees) else 0},
         "sources": {"ground": "USGS 3DEP lidar" if lidar.any() else "Copernicus DEM 30 m", "core_photo": photo,
                     "far_photo": f"Sentinel-2 {s2_day}", "terrain": "Copernicus DEM GLO-30"},
-        "landmarks": marks, "buildings": buildings, "features": features, "birds": birds, "portraits": portraits, "profile": profile or None,
+        "landmarks": marks, "buildings": buildings, "features": features, "sounds": sounds, "birds": birds, "portraits": portraits, "profile": profile or None,
     }
     caveats = []
     if not lidar.any():

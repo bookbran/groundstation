@@ -8,7 +8,11 @@
   html, body { margin: 0; height: 100%; overflow: hidden; background: #0d0b0a; font-family: "Roboto Condensed", Bahnschrift, system-ui, sans-serif; color: #f3ede4; }
   #view { position: fixed; inset: 0; }
   #panel { position: absolute; top: 12px; left: 12px; width: 360px; z-index: 2; padding: 12px 16px; box-sizing: border-box;
-    background: rgba(21,18,15,.55); backdrop-filter: blur(24px); border-radius: 14px; font-size: 13px; }
+    background: rgba(21,18,15,.55); backdrop-filter: blur(24px); border-radius: 14px; font-size: 13px;
+    max-height: calc(100vh - 24px); overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(232,74,47,.55) transparent; }
+  #mix .row { margin: 0; max-height: 0; opacity: 0; transform: translateY(-6px); overflow: hidden; transition: max-height .45s ease, opacity .45s ease, transform .45s ease, margin .45s ease; }
+  #mix.on .row { max-height: 30px; opacity: 1; transform: none; margin: 6px 0; }
+  #mix .row label { padding-left: 14px; box-sizing: border-box; font-size: 12px; color: rgba(243,237,228,.66); }
   #panel h1 { font-size: 16px; margin: 0 0 6px; }
   #panel p { margin: 0 0 10px; color: rgba(243,237,228,.68); line-height: 1.4; }
   .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
@@ -20,16 +24,15 @@
     color: #f3ede4; background: rgba(232,74,47,.14); border: 1px solid rgba(232,74,47,.45); }
   .btns button:hover { background: rgba(232,74,47,.3); }
   .facts { margin-top: 10px; padding-top: 8px; border-top: 1px solid rgba(255,255,255,.12); font: 11px/1.5 "Roboto Mono", Consolas, monospace; color: rgba(243,237,228,.6); }
-  #life { position: absolute; left: 12px; bottom: 12px; z-index: 2; max-width: min(720px, calc(100vw - 24px)); padding: 10px 12px 8px; box-sizing: border-box;
-    background: rgba(21,18,15,.55); backdrop-filter: blur(24px); border-radius: 14px; display: flex; flex-direction: column; gap: 8px; }
+  #life { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,.12); display: flex; flex-direction: column; gap: 10px; }
   #life .set { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
   #life .set > b { flex: none; width: 100%; font: 600 10.5px "Roboto Condensed", Bahnschrift, sans-serif; letter-spacing: .14em; text-transform: uppercase; color: rgba(243,237,228,.62); }
-  #life figure { margin: 0; width: 64px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: default; }
+  #life figure { margin: 0; width: 56px; display: flex; flex-direction: column; align-items: center; gap: 4px; cursor: default; }
   #life figure.bird { cursor: pointer; }
-  #life figure .pic { width: 64px; height: 64px; border-radius: 10px; background: #2a2521 center / cover no-repeat; box-shadow: 0 2px 10px rgba(0,0,0,.35); transition: transform .18s, box-shadow .18s; }
+  #life figure .pic { width: 56px; height: 56px; border-radius: 10px; background: #2a2521 center / cover no-repeat; box-shadow: 0 2px 10px rgba(0,0,0,.35); transition: transform .18s, box-shadow .18s; }
   #life figure.bird:hover .pic { transform: translateY(-3px); box-shadow: 0 6px 18px rgba(0,0,0,.45), 0 0 0 2px rgba(232,74,47,.75); }
   #life figure.on .pic { box-shadow: 0 0 0 2px #E84A2F, 0 0 18px rgba(232,74,47,.55); }
-  #life figcaption { font: 10.5px/1.15 "Roboto Condensed", Bahnschrift, sans-serif; color: rgba(243,237,228,.82); text-align: center; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #life figcaption { font: 10.5px/1.15 "Roboto Condensed", Bahnschrift, sans-serif; color: rgba(243,237,228,.82); text-align: center; max-width: 56px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   #life .credit { font: 9.5px "Roboto Mono", Consolas, monospace; color: rgba(243,237,228,.42); }
   #life .credit a { color: inherit; }
   .tag.meet { background: rgba(232,74,47,.8); }
@@ -53,13 +56,15 @@
   <div class="row"><label for="tod">Time of day</label><input id="tod" type="range" min="6" max="20" step="0.05" value="16.5"><output id="todv"></output></div>
   <div class="row"><label for="wind">Wind</label><input id="wind" type="range" min="0" max="1" step="0.01" value="0.35"><output id="windv"></output></div>
   <div class="row"><label for="cloud">Cloud shadows</label><input id="cloud" type="range" min="0" max="0.6" step="0.01" value="0.3"><output id="cloudv"></output></div>
-  <div class="row"><label for="sound">Sound</label><button id="sound" type="button" style="flex:1;font:inherit;font-size:12.5px;padding:6px 10px;border-radius:9px;cursor:pointer;color:#f3ede4;background:rgba(232,74,47,.14);border:1px solid rgba(232,74,47,.45)">Hear the birds and the water</button></div>
+  <div class="row"><label for="sound">Sound</label><button id="sound" type="button" style="flex:1;font:inherit;font-size:12.5px;padding:6px 10px;border-radius:9px;cursor:pointer;color:#f3ede4;background:rgba(232,74,47,.14);border:1px solid rgba(232,74,47,.45)">Hear this place</button></div>
+  <div id="mix"></div>
   <div class="row"><label for="haze">Haze</label><input id="haze" type="range" min="0" max="1" step="0.01" value="0.4"><output id="hazev"></output></div>
   <div class="btns">
     <button id="goClose">Close in</button>
     <button id="goAcross">Across the land</button>
     <button id="goBack">Pull back</button>
   </div>
+  <div id="life" hidden></div>
   <div class="facts" id="facts"></div>
 </div>
 <script type="module">
@@ -844,11 +849,38 @@ for (const ab of (Array.isArray(meta.features) ? meta.features : []).filter((x) 
 // louder the taller it is. Off until asked: browsers start no sound unbidden.
 const SOUND = { ctx: null, on: false, buf: {}, next: {}, roar: [] };
 window.gsWorld = { SOUND };   // for scripted checks
+// THE MIX (2026-10-31): a layer for each kind of sound this place actually has, from what
+// the builder found nearby: falls, birds, wind in its own trees, and from OpenStreetMap
+// the roads, railways, stadiums and stages, playgrounds and runways. Each has a slider
+// that fades in when the sound comes on. Everything but the birds is synthesised here.
+const SOUNDS = Array.isArray(meta.sounds) ? meta.sounds : [];
+const has = (re) => SOUNDS.some((s) => re.test(s.kind));
+const LAYERS = [
+  FALLS.length && ['water', 'Waterfalls'],
+  BIRDS.some((b) => b.sound) && ['birds', 'Birds'],
+  SPECIES.length && ['trees', 'Wind in trees'],
+  has(/^traffic$/) && ['traffic', 'Traffic'],
+  has(/^(train|tram|subway)$/) && ['trains', SOUNDS.some((s) => s.kind === 'train') ? 'Trains' : 'Transit'],
+  has(/^crowd$/) && ['crowd', 'Crowds'],
+  has(/^play$/) && ['play', 'Kids playing'],
+  has(/^planes$/) && ['planes', 'Planes'],
+].filter(Boolean);
+SOUND.layers = {}; SOUND.level = {};
+document.getElementById('mix').innerHTML = LAYERS.map(([k, label], i) =>
+  '<div class="row" style="transition-delay:' + (i * 70) + 'ms"><label for="mix-' + k + '">' + label + '</label><input id="mix-' + k + '" type="range" min="0" max="1.5" step="0.01" value="1"><output id="mix-' + k + 'v">100%</output></div>').join('');
+for (const [k] of LAYERS) {
+  SOUND.level[k] = 1;
+  document.getElementById('mix-' + k).oninput = (e) => {
+    SOUND.level[k] = Number(e.target.value); document.getElementById('mix-' + k + 'v').textContent = Math.round(SOUND.level[k] * 100) + '%';
+    if (SOUND.layers[k]) SOUND.layers[k].gain.setTargetAtTime(SOUND.level[k], SOUND.ctx.currentTime, 0.08);
+  };
+}
 async function soundOn() {
   if (SOUND.ctx) { SOUND.on = true; SOUND.ctx.resume(); return; }
   const ctx = SOUND.ctx = new (window.AudioContext || window.webkitAudioContext)();
   SOUND.on = true;
   SOUND.master = ctx.createGain(); SOUND.master.gain.value = 0.9; SOUND.master.connect(ctx.destination);
+  for (const [k] of LAYERS) { const g = SOUND.layers[k] = ctx.createGain(); g.gain.value = SOUND.level[k]; g.connect(SOUND.master); }
   for (const b of BIRDS) {
     if (!b.sound) continue;
     try {
@@ -867,9 +899,10 @@ async function soundOn() {
     const pn = ctx.createPanner(); Object.assign(pn, { distanceModel: 'inverse', refDistance: 15 + fl.h * 0.4, rolloffFactor: 1.1, maxDistance: 3000 });
     const at = fl.pool || new THREE.Vector3(fl.xy[0], fl.lipY - fl.h, -fl.xy[1]);
     pn.positionX.value = at.x; pn.positionY.value = at.y + fl.h * 0.3; pn.positionZ.value = at.z;
-    src.connect(lp).connect(g).connect(pn).connect(SOUND.master); src.start();
+    src.connect(lp).connect(g).connect(pn).connect(SOUND.layers.water || SOUND.master); src.start();
     SOUND.roar.push(src);
   }
+  ambienceOn(ctx, noise);
 }
 function soundOff() { SOUND.on = false; if (SOUND.ctx) SOUND.ctx.suspend(); }
 function voice(name, at, near) {
@@ -880,7 +913,7 @@ function voice(name, at, near) {
   g.gain.setValueAtTime(1, ctx.currentTime + len - 0.3); g.gain.linearRampToValueAtTime(0, ctx.currentTime + len);
   const pn = ctx.createPanner(); Object.assign(pn, { distanceModel: 'inverse', refDistance: near, rolloffFactor: 1.3, maxDistance: near * 40 });
   pn.positionX.value = at.x; pn.positionY.value = at.y; pn.positionZ.value = at.z;
-  src.connect(g).connect(pn).connect(SOUND.master); src.start(ctx.currentTime, off, len);
+  src.connect(g).connect(pn).connect(SOUND.layers.birds || SOUND.master); src.start(ctx.currentTime, off, len);
 }
 const earDir = new THREE.Vector3(), earAt = new THREE.Vector3();
 function listen(dt) {
@@ -903,12 +936,140 @@ function listen(dt) {
     const i = Math.floor(Math.random() * f.birds.length), m = new THREE.Matrix4(); f.im.getMatrixAt(i, m); earAt.setFromMatrixPosition(m);
     if (earAt.distanceTo(c) < 900) voice(f.name, earAt, 40);
   }
+  ambience(c, now);
+}
+// the synthesised layers
+const AMB = { lines: [], points: [], movers: [], nextMover: {}, wind: null };
+const toWorld = (p, up = 2) => new THREE.Vector3(p[0], sampleHeight(p[0], p[1]) + up, -p[1]);
+function nearestOn(pts, c, out) {   // the nearest point on a polyline to c, across the ground
+  let bd = Infinity;
+  for (let i = 0; i + 1 < pts.length; i++) {
+    const a = pts[i], b = pts[i + 1], dx = b.x - a.x, dz = b.z - a.z, L = dx * dx + dz * dz || 1;
+    const t = Math.max(0, Math.min(1, ((c.x - a.x) * dx + (c.z - a.z) * dz) / L)), x = a.x + dx * t, z = a.z + dz * t, d = (x - c.x) ** 2 + (z - c.z) ** 2;
+    if (d < bd) { bd = d; out.set(x, a.y + (b.y - a.y) * t, z); }
+  }
+  return Math.sqrt(bd);
+}
+function ambienceOn(ctx, brown) {
+  const white = ctx.createBuffer(1, ctx.sampleRate * 4, ctx.sampleRate), wd = white.getChannelData(0);
+  for (let i = 0; i < wd.length; i++) wd[i] = Math.random() * 2 - 1;
+  const loop = (buf) => { const s = ctx.createBufferSource(); s.buffer = buf; s.loop = true; s.start(0, Math.random() * buf.duration); return s; };
+  const filt = (type, fq, q) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = fq; if (q) b.Q.value = q; return b; };
+  const gain = (v) => { const g = ctx.createGain(); g.gain.value = v; return g; };
+  const pan = (ref) => { const p = ctx.createPanner(); Object.assign(p, { distanceModel: 'inverse', refDistance: ref, rolloffFactor: 1, maxDistance: 20000 }); return p; };
+  Object.assign(AMB, { ctx, white, brown, loop, filt, gain, pan });
+  // wind in the trees: needles hiss, leaves rustle, and aspens and their kin shimmer
+  if (SOUND.layers.trees) {
+    const sum = SPECIES.reduce((a, s) => a + (s.share || 1), 0) || 1;
+    const broad = SPECIES.reduce((a, s) => a + (s.broad ? s.share || 1 : 0), 0) / sum;
+    const shimmer = SPECIES.some((s) => s.rustle === 'shimmer' || /aspen|poplar|cottonwood|birch/i.test(s.name));
+    const hiss = gain(0), rust = gain(0), flutter = gain(0.5), lfo = ctx.createOscillator(), depth = gain(0.5);
+    loop(white).connect(filt('bandpass', 750, 0.45)).connect(hiss).connect(SOUND.layers.trees);
+    loop(white).connect(filt('bandpass', shimmer ? 4300 : 3000, 0.9)).connect(flutter).connect(rust).connect(SOUND.layers.trees);
+    lfo.frequency.value = shimmer ? 13 : 6.5; lfo.connect(depth).connect(flutter.gain); lfo.start();
+    AMB.wind = { hiss, rust, conifer: 1 - broad, broad, shimmer };
+  }
+  for (const s of SOUNDS) {
+    const layer = SOUND.layers[{ traffic: 'traffic', train: 'trains', tram: 'trains', subway: 'trains', crowd: 'crowd', play: 'play', planes: 'planes' }[s.kind]];
+    if (!layer) continue;
+    if (s.kind === 'traffic') {   // a steady wash from the nearest stretch of road, tyres on top
+      const big = s.cls === 'motorway' || s.cls === 'trunk', p = pan(big ? 40 : 18), g = gain(big ? 0.9 : 0.45);
+      loop(brown).connect(filt('lowpass', big ? 750 : 1000)).connect(g);
+      loop(white).connect(filt('bandpass', 1700, 0.7)).connect(gain(0.12)).connect(g);
+      g.connect(p).connect(layer);
+      AMB.lines.push({ s, pts: s.pts.map((q) => toWorld(q, 1)), p, at: new THREE.Vector3(), big, layer });
+    } else if (s.pts) {           // trains, trams, subways and planes come and go along their line
+      AMB.lines.push({ s, pts: s.pts.map((q) => toWorld(q, s.kind === 'subway' ? 0 : 3)), layer, mover: true });
+      AMB.nextMover[s.kind] = ctx.currentTime + 6 + Math.random() * 10;
+    } else if (s.at) {            // a crowd or a playground, from where it is
+      const p = pan(s.kind === 'crowd' ? 70 : 22), g = gain(s.kind === 'crowd' ? 0.3 : 0.2), bp = filt('bandpass', s.kind === 'crowd' ? 900 : 2600, s.kind === 'crowd' ? 0.5 : 1.3);
+      loop(white).connect(bp).connect(g).connect(p).connect(layer);
+      const at = toWorld(s.at, 2); p.positionX.value = at.x; p.positionY.value = at.y; p.positionZ.value = at.z;
+      AMB.points.push({ s, g, bp, next: ctx.currentTime + 3 + Math.random() * 10 });
+    }
+  }
+}
+const ambAt = new THREE.Vector3();
+function startMover(line, now) {
+  const { ctx, loop, filt, gain, pan, brown, white } = AMB, kind = line.s.kind;
+  let pts = line.pts.slice(); if (Math.random() < 0.5) pts.reverse();
+  if (kind === 'planes') {   // down the runway and up, climbing away
+    const a = pts[0], b = pts[pts.length - 1], d = b.clone().sub(a);
+    pts = [a, b, b.clone().add(d.clone().multiplyScalar(2)).setY(b.y + 400)];
+  }
+  const segs = [0]; for (let i = 1; i < pts.length; i++) segs.push(segs[i - 1] + pts[i].distanceTo(pts[i - 1]));
+  const out = gain(0), p = pan(kind === 'planes' ? 90 : kind === 'train' ? 30 : 16); out.connect(p).connect(line.layer);
+  const srcs = [];
+  const add = (node) => { srcs.push(node); return node; };
+  if (kind === 'planes') {
+    const lp = filt('lowpass', 500); add(loop(brown)).connect(lp).connect(gain(1.2)).connect(out);
+    const o = add(ctx.createOscillator()); o.type = 'sawtooth'; o.frequency.value = 2900; o.connect(filt('bandpass', 2900, 8)).connect(gain(0.05)).connect(out); o.start();
+    lp.frequency.setValueAtTime(400, now); lp.frequency.linearRampToValueAtTime(1600, now + 12);
+  } else {
+    add(loop(brown)).connect(filt('lowpass', kind === 'train' ? 220 : 380)).connect(gain(kind === 'train' ? 1.3 : 0.7)).connect(out);
+    const clack = gain(0), lfo = add(ctx.createOscillator()); lfo.type = 'square'; lfo.frequency.value = kind === 'train' ? 2.3 : 3.1; lfo.connect(gain(0.18)).connect(clack.gain); lfo.start();
+    add(loop(white)).connect(filt('bandpass', 2400, 2)).connect(clack).connect(out);
+  }
+  const speed = kind === 'planes' ? 75 : kind === 'train' ? 24 : 12;
+  line.run = { pts, segs, out, p, srcs, s: 0, speed, kind, signals: [0.02, 0.55] };
+  out.gain.setTargetAtTime(1, now, 2.5);
+}
+function signal(run, now) {   // a freight horn's long chord, or a tram's bell and a transit chime
+  const { ctx, filt, gain } = AMB, g = gain(0); g.connect(run.out);
+  const notes = run.kind === 'train' ? [277, 349, 415] : run.kind === 'subway' ? [659, 523, 784] : [1175, 1175];
+  notes.forEach((fq, i) => {
+    const o = ctx.createOscillator(); o.type = run.kind === 'train' ? 'sawtooth' : 'sine'; o.frequency.value = fq;
+    const t0 = run.kind === 'train' ? now : now + i * 0.38, len = run.kind === 'train' ? 2.2 : 0.5;
+    const e = gain(0); e.gain.setValueAtTime(0, t0); e.gain.linearRampToValueAtTime(run.kind === 'train' ? 0.22 : 0.35, t0 + 0.05); e.gain.setTargetAtTime(0, t0 + len * 0.6, len * 0.25);
+    o.connect(run.kind === 'train' ? filt('lowpass', 1500) : e).connect(run.kind === 'train' ? e : g); if (run.kind === 'train') e.connect(g);
+    o.start(t0); o.stop(t0 + len + 1);
+  });
+  g.gain.value = 1;
+}
+function ambience(c, now) {
+  if (!AMB.ctx) return;
+  const dt = 1 / 60;
+  if (AMB.wind) {   // louder with the wind slider, in gusts, and among the trees rather than above them
+    const w = uniforms.uWind.value, t = U.uTime.value;
+    const gust = 0.55 + 0.45 * (0.5 + 0.5 * Math.sin(t * 0.37) * Math.sin(t * 0.13 + 1.7));
+    const near = Math.max(0.05, Math.min(1, 1 - (c.y - sampleHeight(c.x, -c.z)) / 300));
+    const a = w * gust * near;
+    AMB.wind.hiss.gain.setTargetAtTime(a * AMB.wind.conifer * 0.4, now, 0.4);
+    AMB.wind.rust.gain.setTargetAtTime(a * AMB.wind.broad * (AMB.wind.shimmer ? 0.55 : 0.35), now, 0.4);
+  }
+  for (const L of AMB.lines) {
+    if (L.p && !L.mover) { nearestOn(L.pts, c, L.at); L.p.positionX.value = L.at.x; L.p.positionY.value = L.at.y; L.p.positionZ.value = L.at.z;
+      if (!L.big && L.s.honk !== false && Math.random() < dt / 25 && L.at.distanceTo(c) < 250) signalHonk(L, now); }
+    if (L.mover && !L.run && now > (AMB.nextMover[L.s.kind] || 0) && !AMB.lines.some((x) => x.run && x.s.kind === L.s.kind) && Math.random() < 0.02) {
+      startMover(L, now); AMB.nextMover[L.s.kind] = now + 70 + Math.random() * 110;
+    }
+    const r = L.run; if (!r) continue;
+    r.s += r.speed * dt;
+    const total = r.segs[r.segs.length - 1], frac = r.s / total;
+    let i = 1; while (i < r.segs.length - 1 && r.segs[i] < r.s) i++;
+    const t = Math.min(1, (r.s - r.segs[i - 1]) / ((r.segs[i] - r.segs[i - 1]) || 1));
+    ambAt.lerpVectors(r.pts[i - 1], r.pts[i], t); r.p.positionX.value = ambAt.x; r.p.positionY.value = ambAt.y; r.p.positionZ.value = ambAt.z;
+    if (r.kind !== 'planes' && r.signals.length && frac > r.signals[0]) { r.signals.shift(); signal(r, now); }
+    if (frac > 0.9 && !r.ending) { r.ending = true; r.out.gain.setTargetAtTime(0, now, 2); }
+    if (frac >= 1) { r.srcs.forEach((n) => { try { n.stop(); } catch (_) {} }); r.out.disconnect(); L.run = null; }
+  }
+  for (const P of AMB.points) {   // crowds swell into a cheer now and then; a playground chatters in bursts
+    if (now < P.next) continue;
+    if (P.s.kind === 'crowd') { P.g.gain.setTargetAtTime(1.1, now, 0.6); P.g.gain.setTargetAtTime(0.3, now + 2.5, 1.2); P.bp.frequency.setTargetAtTime(1500, now, 0.5); P.bp.frequency.setTargetAtTime(900, now + 2.5, 1); P.next = now + 20 + Math.random() * 45; }
+    else { P.g.gain.setTargetAtTime(0.05 + Math.random() * 0.5, now, 0.08); P.next = now + 0.25 + Math.random() * 1.2; }
+  }
+}
+function signalHonk(L, now) {   // a car horn somewhere on the street
+  const { ctx, gain, filt } = AMB, g = gain(0), len = 0.15 + Math.random() * 0.4;
+  g.gain.setValueAtTime(0, now); g.gain.linearRampToValueAtTime(0.25, now + 0.02); g.gain.setValueAtTime(0.25, now + len); g.gain.linearRampToValueAtTime(0, now + len + 0.05);
+  for (const fq of [420, 520]) { const o = ctx.createOscillator(); o.type = 'square'; o.frequency.value = fq * (0.9 + Math.random() * 0.2); o.connect(g); o.start(now); o.stop(now + len + 0.1); }
+  g.connect(filt('lowpass', 2200)).connect(L.p);
 }
 let meeting = null;
 const meetTag = Object.assign(document.createElement('div'), { className: 'tag meet' }); meetTag.style.display = 'none'; document.body.appendChild(meetTag);
 async function meet(name, fig) {
   document.querySelectorAll('#life figure.on').forEach((x) => x.classList.remove('on')); fig.classList.add('on');
-  if (!SOUND.on) { await soundOn(); document.getElementById('sound').textContent = 'Listening… (press to quiet)'; }
+  if (!SOUND.on) { await soundOn(); document.getElementById('sound').textContent = 'Listening… (press to quiet)'; document.getElementById('mix').classList.add('on'); }
   const c = camera.position, fl = flocks.find((x) => x.name === name), pe = perched.find((x) => x.name === name), at = new THREE.Vector3();
   let best = -1, bd = Infinity;
   if (fl) for (let i = 0; i < fl.birds.length; i++) { const m = new THREE.Matrix4(); fl.im.getMatrixAt(i, m); at.setFromMatrixPosition(m); const d = at.distanceToSquared(c); if (d < bd) { bd = d; best = i; } }
@@ -1136,8 +1297,9 @@ const tod = document.getElementById('tod'), wind = document.getElementById('wind
 const setHaze = () => { scene.fog.density = 0.000004 + Number(haze.value) * 0.00004; document.getElementById('hazev').textContent = Math.round(haze.value * 100) + '%'; };
 const setWind = () => { uniforms.uWind.value = Number(wind.value); document.getElementById('windv').textContent = Math.round(wind.value * 100) + '%'; };
 document.getElementById('sound').onclick = async (e) => {
-  if (SOUND.on) { soundOff(); e.target.textContent = 'Hear the birds and the water'; }
+  if (SOUND.on) { soundOff(); e.target.textContent = 'Hear this place'; }
   else { e.target.textContent = 'Listening… (press to quiet)'; await soundOn(); }
+  document.getElementById('mix').classList.toggle('on', SOUND.on);
 };
 const cloud = document.getElementById('cloud'); const setCloud = () => { U.uCloud.value = Number(cloud.value); document.getElementById('cloudv').textContent = Math.round(cloud.value / 0.6 * 100) + '%'; };
 cloud.oninput = setCloud; setCloud();
@@ -1261,6 +1423,5 @@ renderer.setAnimationLoop(() => {
 });
 const loading = document.getElementById('loading'); loading.style.opacity = 0; setTimeout(() => loading.remove(), 900);
 </script>
-<div id="life" hidden></div>
 </body>
 </html>
