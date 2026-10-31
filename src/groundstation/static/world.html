@@ -68,7 +68,7 @@
     <button id="goBack">Pull back</button>
   </div>
   <div id="life" hidden></div>
-  <div class="facts" id="hint">scroll to fly toward the pointer · drag to look · right-drag up and down to rise and sink, sideways to slide · W A S D to glide, Q E down and up, Shift for speed</div>
+  <div class="facts" id="hint">scroll to fly toward the pointer · drag to steer (push up to dip, pull down to lift) · right-drag up and down to rise and sink, sideways to slide · W A S D to glide, Q E down and up, Shift for speed</div>
   <div class="facts" id="facts"></div>
 </div>
 <script type="module">
@@ -1715,6 +1715,31 @@ const flyF = new THREE.Vector3(), flyR = new THREE.Vector3(), flyM = new THREE.V
 // elevation"): up and down lifts and lowers you, sideways slides you left and right;
 // how far follows your height above the ground. Replaces the orbit's right-button pan.
 controls.mouseButtons.RIGHT = -1;
+// LEFT-DRAG STEERS (2026-10-31, "more like airplane control"): you turn the view from
+// where you are, as a pilot does: drag right to turn right, push up to dip the nose and
+// pull down to lift it. Replaces the orbit's swing around a point out in front.
+controls.mouseButtons.LEFT = -1;
+let steer = null;
+const steerOff = new THREE.Vector3(), steerAxis = new THREE.Vector3(), Y_UP = new THREE.Vector3(0, 1, 0);
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (e.button !== 0) return;
+  steer = { x: e.clientX, y: e.clientY }; try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+  if (meeting) meeting.until = 0; fly = null;
+});
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!steer) return;
+  const dx = e.clientX - steer.x, dy = e.clientY - steer.y; steer = { x: e.clientX, y: e.clientY };
+  steerOff.subVectors(controls.target, camera.position);
+  steerOff.applyAxisAngle(Y_UP, -dx * 0.0035);                                    // turn
+  const len = steerOff.length(), pitch = Math.asin(THREE.MathUtils.clamp(steerOff.y / len, -1, 1));
+  const want = THREE.MathUtils.clamp(pitch + dy * 0.0035, -1.45, 1.45);         // push up, nose down
+  steerAxis.set(-steerOff.z, 0, steerOff.x).normalize();
+  if (steerAxis.lengthSq()) steerOff.applyAxisAngle(steerAxis, want - pitch);
+  controls.target.copy(camera.position).add(steerOff);
+});
+const endSteer = (e) => { if (steer && e.button === 0) { steer = null; try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) {} } };
+renderer.domElement.addEventListener('pointerup', endSteer);
+renderer.domElement.addEventListener('pointercancel', () => { steer = null; });
 let lift = null;
 const liftBy = new THREE.Vector3();
 renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
