@@ -783,7 +783,9 @@ for (let i = 0; i < nT; i++) {
   const x = treeData[i * 5], y = treeData[i * 5 + 1], h = treeData[i * 5 + 3], g = hAt(...cellAt(x, y));
   if (h < 5 || h > 80 || g < waterY + 0.5 || carvedAt(x, y) || clearAt(x, y)) continue;
   const nearWater = g < waterY + 14, r = rand();
-  const sp = pickSpecies(g, h, nearWater, r);
+  // a tree the city has named stands as its own species (Portland's street tree inventory, 2026-11-01)
+  const own = Array.isArray(meta.tree_sp) ? meta.tree_sp[i] : -1;
+  const sp = own >= 0 && own < SPECIES.length ? own : pickSpecies(g, h, nearWater, r);
   plan.push({ x, y, g, h, sp, rot: rand() * Math.PI * 2, wide: 0.85 + rand() * 0.35, tint: rand() });
 }
 {
@@ -975,6 +977,7 @@ const buildingCount = CITY ? cityBuildings() : (() => {
 })();
 const signCount = CITY ? (indexEdges(), citySigns()) : 0;
 if (CITY) { cityScreens(); cityCrowd(); placeTagHeights(); }
+touchTrees();
 touchCreatures();
 touchMaterials();
 touchRules();
@@ -1717,7 +1720,8 @@ const inCore = (X, Y, pad = 30) => X > core.extent[0] - pad && X < core.extent[2
       o[k] = s / c; }
     m = o;
   }
-  for (let k = 0; k < n; k++) if (m[k] > 0) pos.setY(k, pos.getY(k) + 30 * m[k]);
+  // a city's green is street trees over houses, not a forest roof: it is shaded, never raised into hills (2026-11-01)
+  if (!CITY) for (let k = 0; k < n; k++) if (m[k] > 0) pos.setY(k, pos.getY(k) + 30 * m[k]);
   farMesh.geometry.setAttribute('aForest', new THREE.BufferAttribute(m, 1));
   const fm = farMesh.material, base = fm.onBeforeCompile;
   fm.onBeforeCompile = (sh) => {

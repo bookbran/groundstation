@@ -105,11 +105,48 @@ function catModel(colour) {
   const tm = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.02, 0.26, 5), m); tm.position.set(0, 0.1, -0.06); tm.rotation.x = -0.6; tail.add(tm);
   return { g, tail, head };
 }
+// a squirrel and a rabbit (2026-11-01, Dan: "crows and squirrels, and a lot of rabbits")
+function squirrelModel(colour) {
+  const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(colour || '#7a6a5a'), roughness: 0.95 }), belly = new THREE.MeshStandardMaterial({ color: 0xd9d0c2, roughness: 0.95 });
+  const g = new THREE.Group(), add = (geo, mat, x, y, z, sc) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); if (sc) o.scale.set(...sc); o.castShadow = true; g.add(o); return o; };
+  add(new THREE.SphereGeometry(0.06, 10, 8), m, 0, 0.08, 0, [1, 1.05, 1.7]);
+  add(new THREE.SphereGeometry(0.045, 8, 6), belly, 0, 0.06, 0.02, [0.8, 0.8, 1.3]);
+  const head = add(new THREE.SphereGeometry(0.04, 10, 8), m, 0, 0.13, 0.1);
+  for (const sx of [-1, 1]) add(new THREE.ConeGeometry(0.012, 0.03, 4), m, sx * 0.022, 0.17, 0.1);
+  const tail = new THREE.Group(); tail.position.set(0, 0.08, -0.09); g.add(tail);
+  const tm = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 6), m); tm.scale.set(0.8, 2.4, 0.8); tm.position.set(0, 0.1, -0.03); tm.rotation.x = -0.35; tail.add(tm);
+  return { g, tail, head, hop: 0.03, speed: 1.6, pause: [1, 4] };
+}
+function rabbitModel(colour) {
+  const m = new THREE.MeshStandardMaterial({ color: new THREE.Color(colour || '#8a7560'), roughness: 0.97 }), white = new THREE.MeshStandardMaterial({ color: 0xf2efe8, roughness: 0.97 });
+  const g = new THREE.Group(), add = (geo, mat, x, y, z, sc, rx) => { const o = new THREE.Mesh(geo, mat); o.position.set(x, y, z); if (sc) o.scale.set(...sc); if (rx) o.rotation.x = rx; o.castShadow = true; g.add(o); return o; };
+  add(new THREE.SphereGeometry(0.09, 10, 8), m, 0, 0.1, -0.02, [1, 0.95, 1.35]);
+  const head = add(new THREE.SphereGeometry(0.055, 10, 8), m, 0, 0.17, 0.11);
+  for (const sx of [-1, 1]) add(new THREE.CapsuleGeometry(0.014, 0.08, 3, 6), m, sx * 0.022, 0.25, 0.09, null, -0.25);
+  add(new THREE.SphereGeometry(0.03, 8, 6), white, 0, 0.12, -0.14);
+  const tail = new THREE.Group(); g.add(tail);
+  return { g, tail, head, hop: 0.07, speed: 1.1, pause: [3, 12] };
+}
+function creatureModel(type, colour) {
+  if (type === 'squirrel') return squirrelModel(colour);
+  if (type === 'rabbit') return rabbitModel(colour);
+  return Object.assign(catModel(colour), { hop: 0.012, speed: 0.55, pause: [2, 9] });
+}
+// trees someone planted by touch: a magnolia in the front yard, standing as its species
+function touchTrees() {
+  for (const t of TOUCHES.filter((q) => q.kind === 'tree')) {
+    const r = t.tree || {}, want = String(r.species || '').toLowerCase();
+    let sp = SPECIES.findIndex((q) => q.name.toLowerCase() === want);
+    if (sp < 0) sp = SPECIES.findIndex((q) => !!q.broad === (r.form !== 'conifer'));
+    if (sp < 0) sp = 0;
+    plan.push({ x: t.xy[0], y: t.xy[1], g: sampleHeight(t.xy[0], t.xy[1]), h: r.height_m || 9, sp, rot: hash1(t.xy[0], t.xy[1]) * 6.283, wide: r.wide || 1, tint: 0.5 });
+  }
+}
 function touchCreatures() {
   for (const t of TOUCHES.filter((q) => q.kind === 'creature')) {
     const c = t.creature || {};
     for (let i = 0; i < Math.min(6, c.count || 1); i++) {
-      const cat = catModel(c.colour), at = [t.xy[0] + (Math.random() - 0.5) * 4, t.xy[1] + (Math.random() - 0.5) * 4];
+      const cat = creatureModel(c.type, c.colour), at = [t.xy[0] + (Math.random() - 0.5) * 6, t.xy[1] + (Math.random() - 0.5) * 6];
       scene.add(cat.g);
       CREATURES.push({ t, cat, x: at[0], y: at[1], tx: at[0], ty: at[1], rest: Math.random() * 3, yaw: Math.random() * 6.28, roam: c.roam_m || 12 });
     }
@@ -119,10 +156,11 @@ function moveCreatures(dt, time) {
   for (const k of CREATURES) {
     const on = inWhen(k.t.when); k.cat.g.visible = on; if (!on) continue;
     const dx = k.tx - k.x, dy = k.ty - k.y, d = Math.hypot(dx, dy);
-    if (d < 0.08) { k.rest -= dt; if (k.rest < 0) { const a = Math.random() * 6.283, r = Math.random() * k.roam; k.tx = k.t.xy[0] + Math.cos(a) * r; k.ty = k.t.xy[1] + Math.sin(a) * r; k.rest = 2 + Math.random() * 7; } }
-    else { const st = Math.min(d, 0.55 * dt); k.x += dx / d * st; k.y += dy / d * st; k.yaw = Math.atan2(dx, -dy) + Math.PI; }
+    const P = k.cat.pause || [2, 9];
+    if (d < 0.08) { k.rest -= dt; if (k.rest < 0) { const a = Math.random() * 6.283, r = Math.random() * k.roam; k.tx = k.t.xy[0] + Math.cos(a) * r; k.ty = k.t.xy[1] + Math.sin(a) * r; k.rest = P[0] + Math.random() * (P[1] - P[0]); } }
+    else { const st = Math.min(d, (k.cat.speed || 0.55) * dt); k.x += dx / d * st; k.y += dy / d * st; k.yaw = Math.atan2(dx, -dy) + Math.PI; }
     const walking = d >= 0.08;
-    k.cat.g.position.set(k.x, sampleHeight(k.x, k.y) + (walking ? Math.abs(Math.sin(time * 9)) * 0.012 : 0), -k.y);
+    k.cat.g.position.set(k.x, sampleHeight(k.x, k.y) + (walking ? Math.abs(Math.sin(time * (k.cat.hop > 0.05 ? 6 : 9))) * (k.cat.hop || 0.012) : 0), -k.y);
     k.cat.g.rotation.y = k.yaw;
     k.cat.tail.rotation.z = Math.sin(time * (walking ? 3 : 1.2)) * 0.5;
     k.cat.head.rotation.y = walking ? 0 : Math.sin(time * 0.4 + k.x) * 0.6;
@@ -178,9 +216,14 @@ function cityBuildings() {
     cx /= pts.length; cy /= pts.length; base -= 0.4;
     const top = base + h + 0.4;
     const style = h >= 70 ? 2 : h >= 22 ? 1 : 0, seed = hash1(cx * 0.37, cy * 0.53);
-    try { wc.set(b.wall || PAL[style][Math.floor(seed * PAL[style].length)]); } catch (_) { wc.set(PAL[style][0]); }
-    try { rc.set(b.roof || '#6d7176'); } catch (_) { rc.set('#6d7176'); }
-    if (!b.roof) rc.multiplyScalar(0.8 + 0.35 * hash1(seed * 91));
+    // a neighbourhood of houses: the study's own wall and roof colours, and pitched roofs
+    // (2026-11-01, Dan's block in Beaumont-Wilshire)
+    const ST = PROFILE.structures || {}, ownWalls = Array.isArray(ST.walls) && style === 0 ? ST.walls : null, ownRoofs = Array.isArray(ST.roofs) ? ST.roofs : null;
+    try { wc.set(b.wall || (ownWalls ? ownWalls[Math.floor(seed * ownWalls.length)] : PAL[style][Math.floor(seed * PAL[style].length)])); } catch (_) { wc.set(PAL[style][0]); }
+    try { rc.set(b.roof || (ownRoofs ? ownRoofs[Math.floor(hash1(seed * 7) * ownRoofs.length)] : '#6d7176')); } catch (_) { rc.set('#6d7176'); }
+    if (!b.roof && !ownRoofs) rc.multiplyScalar(0.8 + 0.35 * hash1(seed * 91));
+    const pitched = ST.roof_form === 'pitched' && style === 0 && h < 14 && Math.abs(A) < 1200;
+    const roofH = pitched ? Math.min(3.6, Math.max(1.5, Math.sqrt(Math.abs(A)) * 0.24)) : 0, wallTop = top - roofH;
     wc.multiplyScalar(0.92 + 0.16 * hash1(seed * 13));
     const rec = { id: b.id, pts, h, base, top, c: [cx, cy], style, seed, name: b.name, edges: [] };
     const T = b.id && FACADES.get(b.id);
@@ -191,16 +234,28 @@ function cityBuildings() {
       const [ax, ay] = pts[i], [bx, by] = pts[(i + 1) % pts.length], dx = bx - ax, dy = by - ay, L = Math.hypot(dx, dy);
       if (L < 0.05) continue;
       const nx = dy / L, nz = dx / L;   // outward, in world x and z
-      const quad = [[ax, base, -ay, u, 0], [bx, base, -by, u + L, 0], [bx, top, -by, u + L, top - base], [ax, base, -ay, u, 0], [bx, top, -by, u + L, top - base], [ax, top, -ay, u, top - base]];
+      const quad = [[ax, base, -ay, u, 0], [bx, base, -by, u + L, 0], [bx, wallTop, -by, u + L, wallTop - base], [ax, base, -ay, u, 0], [bx, wallTop, -by, u + L, wallTop - base], [ax, wallTop, -ay, u, wallTop - base]];
       for (const [x, y, z, uu, vv] of quad) { if (G) { G.P.push(x, y, z); G.N.push(nx, 0, nz); G.UV.push(uu, vv); continue; } P.push(x, y, z); N.push(nx, 0, nz); C.push(wc.r, wc.g, wc.b); UV.push(uu, vv); B.push(style, seed, 1); }
       rec.edges.push({ a: [ax, ay], b: [bx, by], L, n: [dy / L, -dx / L], used: 0 });
       u += L;
     }
-    const tris = THREE.ShapeUtils.triangulateShape(pts.map(([x, y]) => new THREE.Vector2(x, y)), []);
+    let capPts = pts, capY = top;
+    if (pitched) {
+      const ins = pts.map(([x, y]) => [cx + (x - cx) * 0.3, cy + (y - cy) * 0.3]);
+      const e1 = new THREE.Vector3(), e2 = new THREE.Vector3(), nn = new THREE.Vector3();
+      for (let i = 0; i < pts.length; i++) {
+        const a0 = pts[i], b0 = pts[(i + 1) % pts.length], a1 = ins[i], b1 = ins[(i + 1) % pts.length];
+        const PA = [a0[0], wallTop, -a0[1]], PB = [b0[0], wallTop, -b0[1]], QB = [b1[0], top, -b1[1]], QA = [a1[0], top, -a1[1]];
+        e1.set(PB[0] - PA[0], PB[1] - PA[1], PB[2] - PA[2]); e2.set(QB[0] - PA[0], QB[1] - PA[1], QB[2] - PA[2]); nn.crossVectors(e1, e2).normalize();
+        for (const q of [PA, PB, QB, PA, QB, QA]) { const T = G || null; if (T) { T.P.push(...q); T.N.push(nn.x, nn.y, nn.z); T.UV.push(q[0], -q[2]); } else { P.push(...q); N.push(nn.x, nn.y, nn.z); C.push(rc.r, rc.g, rc.b); UV.push(q[0], -q[2]); B.push(style, seed, 0); } }
+      }
+      capPts = ins;
+    }
+    const tris = THREE.ShapeUtils.triangulateShape(capPts.map(([x, y]) => new THREE.Vector2(x, y)), []);
     for (let [i, j, k] of tris) {
-      const [x1, y1] = pts[i], [x2, y2] = pts[j], [x3, y3] = pts[k];
+      const [x1, y1] = capPts[i], [x2, y2] = capPts[j], [x3, y3] = capPts[k];
       if ((x2 - x1) * (y3 - y1) - (y2 - y1) * (x3 - x1) < 0) [j, k] = [k, j];
-      for (const q of [i, j, k]) { const [x, y] = pts[q]; if (G) { G.P.push(x, top, -y); G.N.push(0, 1, 0); G.UV.push(x, y); continue; } P.push(x, top, -y); N.push(0, 1, 0); C.push(rc.r, rc.g, rc.b); UV.push(x, y); B.push(style, seed, 0); }
+      for (const q of [i, j, k]) { const [x, y] = capPts[q]; if (G) { G.P.push(x, capY, -y); G.N.push(0, 1, 0); G.UV.push(x, y); continue; } P.push(x, capY, -y); N.push(0, 1, 0); C.push(rc.r, rc.g, rc.b); UV.push(x, y); B.push(style, seed, 0); }
     }
     BLD.push(rec);
   }
