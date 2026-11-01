@@ -92,6 +92,44 @@ function touchRules() {
     }
   }
 }
+// THE CANOPY SHELL (2026-11-01, beside Google Earth's view of Dan's block): the lidar's canopy as a
+// surface at its real heights, wearing the aerial photo, so a grove has its true mass, outline and
+// colour from above and the side. Lower in the canopy is darker, as a crown's inside is; its edges
+// slope down to the ground the way a photographed canopy does.
+const CANOPY = meta.canopy ? await f32('canopy.bin') : null;
+function canopyShell() {
+  if (!CANOPY || !meta.canopy) return 0;
+  const [W, H] = meta.canopy.grid, cc = meta.canopy.cell || cell / 2, ex = core.extent;
+  const c = new Float32Array(W * H);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {   // a light blur, so crowns are round, not pixels
+    let s = 0, n = 0;
+    for (let dj = -1; dj <= 1; dj++) for (let di = -1; di <= 1; di++) { const a = i + di, b = j + dj; if (a < 0 || b < 0 || a >= W || b >= H) continue; const w = di || dj ? 1 : 2; s += CANOPY[b * W + a] * w; n += w; }
+    c[j * W + i] = s / n;
+  }
+  const P = new Float32Array(W * H * 3), UV = new Float32Array(W * H * 2), C = new Float32Array(W * H * 3);
+  for (let j = 0; j < H; j++) for (let i = 0; i < W; i++) {
+    const k = j * W + i, x = ex[0] + (i + 0.5) * cc, y = ex[3] - (j + 0.5) * cc, h = c[k];
+    const bump = h > 2 ? (hash1(i * 0.37, j * 0.71) - 0.5) * Math.min(1.6, h * 0.07) : 0;   // foliage is never a smooth sheet
+    const g = smoothHeight(x, y);
+    P[k * 3] = x; P[k * 3 + 1] = h > 1.5 ? g + h + bump : g - 0.4; P[k * 3 + 2] = -y;
+    UV[k * 2] = (x - ex[0]) / (ex[2] - ex[0]); UV[k * 2 + 1] = (y - ex[1]) / (ex[3] - ex[1]);
+    const shade = h > 1.5 ? 0.62 + 0.42 * Math.min(1, h / 28) : 0.45;
+    C[k * 3] = C[k * 3 + 1] = C[k * 3 + 2] = shade;
+  }
+  const idx = [];
+  for (let j = 0; j + 1 < H; j++) for (let i = 0; i + 1 < W; i++) {
+    const a = j * W + i, b = a + 1, d = a + W, e = d + 1;
+    if (Math.max(c[a], c[b], c[d], c[e]) < 2.5) continue;
+    idx.push(a, d, b, b, d, e);
+  }
+  if (!idx.length) return 0;
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.BufferAttribute(UV, 2)); g.setAttribute('color', new THREE.BufferAttribute(C, 3));
+  g.setIndex(idx); g.computeVertexNormals();
+  const mat = living(new THREE.MeshStandardMaterial({ map: corePhoto, vertexColors: true, roughness: 0.96, metalness: 0, side: THREE.DoubleSide }), false);
+  const mesh = new THREE.Mesh(g, mat); mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh);
+  return idx.length / 6;
+}
 // creatures: a cat (for now) that roams near where it was left, in its hours
 const CREATURES = [];
 function catModel(colour) {

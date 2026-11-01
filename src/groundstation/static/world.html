@@ -996,6 +996,7 @@ const buildingCount = CITY ? cityBuildings() : (() => {
 })();
 const signCount = CITY ? (indexEdges(), citySigns()) : 0;
 if (CITY) { cityScreens(); cityCrowd(); placeTagHeights(); }
+canopyShell();
 touchTrees();
 touchCreatures();
 touchMaterials();
@@ -1667,29 +1668,35 @@ async function meet(name, fig) {
   // stand off a few wingspans, a little above and to the side
   const away = new THREE.Vector3().subVectors(c, controls.target).setY(0).normalize();
   if (!away.lengthSq()) away.set(0, 0, 1);
-  meeting = { fl, pe, i: best, name, until: U.uTime.value + 14, dist: Math.max(1.4, span * (fl ? 7 : 6)), away, called: 0 };
+  // a ground bird is met from further off and near its own eye level, so what is behind it is the
+  // place (trees, houses, the street), not a close-up of the aerial photo under it (2026-11-01)
+  meeting = { fl, pe, i: best, name, until: U.uTime.value + 14, dist: fl ? Math.max(2.5, span * 9) : Math.max(3.2, span * 16), away, called: 0, seen: null };
   meetTag.textContent = name; meetTag.style.display = '';
 }
 function birdAt(m, out) {
   if (m.fl) { const k = new THREE.Matrix4(); m.fl.im.getMatrixAt(m.i, k); return out.setFromMatrixPosition(k); }
   const b = m.pe.birds[m.i]; return out.set(b.x, b.g + b.s * 0.4, -b.y);
 }
-const meetAt = new THREE.Vector3(), meetCam = new THREE.Vector3();
+const meetAt = new THREE.Vector3(), meetCam = new THREE.Vector3(), meetUp = new THREE.Vector3();
 function keepMeeting(dt) {
   if (!meeting) { meetTag.style.display = 'none'; return; }
   const m = meeting, t = U.uTime.value;
   if (t > m.until) { meeting = null; camera.near = 1; camera.updateProjectionMatrix(); document.querySelectorAll('#life figure.on').forEach((x) => x.classList.remove('on')); return; }
   birdAt(m, meetAt);
-  meetCam.copy(meetAt).addScaledVector(m.away, m.dist); meetCam.y += m.dist * 0.35;
-  meetCam.y = Math.max(meetCam.y, sampleHeight(meetCam.x, -meetCam.z) + 0.6);
-  const k = 1 - Math.exp(-dt * (m.fl ? 2.5 : 1.8));
-  camera.position.lerp(meetCam, k); controls.target.lerp(meetAt, 1 - Math.exp(-dt * 5));
+  // follow a smoothed track of the bird, not every hop and wingbeat, so the view and its name hold steady
+  if (!m.seen) m.seen = meetAt.clone(); else m.seen.lerp(meetAt, 1 - Math.exp(-dt * (m.fl ? 1.6 : 1.1)));
+  meetCam.copy(m.seen).addScaledVector(m.away, m.dist);
+  const groundHere = sampleHeight(meetCam.x, -meetCam.z);
+  meetCam.y = m.fl ? m.seen.y + m.dist * 0.22 : Math.max(m.seen.y, groundHere) + Math.max(0.55, m.dist * 0.14);
+  meetCam.y = Math.max(meetCam.y, groundHere + 0.45);
+  const k = 1 - Math.exp(-dt * (m.fl ? 1.8 : 1.2));
+  camera.position.lerp(meetCam, k); controls.target.lerp(m.seen, 1 - Math.exp(-dt * 2.2));
   // its voice once you are close, again now and then
   if (SOUND.on && t > m.called && camera.position.distanceTo(meetAt) < m.dist * 2.5) { voice(m.name, meetAt, 12); m.called = t + 5 + Math.random() * 3; }
-  v.copy(meetAt).project(camera);
+  v.copy(m.seen).add(meetUp.set(0, (m.fl ? 0.6 : 0.35) + m.dist * 0.04, 0)).project(camera);   // the name rides the steady track, just above
   const show = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;
   meetTag.style.display = show ? '' : 'none';
-  if (show) { meetTag.style.left = ((v.x + 1) / 2 * innerWidth) + 'px'; meetTag.style.top = ((1 - v.y) / 2 * innerHeight - m.dist * 0 - 22) + 'px'; }
+  if (show) { meetTag.style.left = ((v.x + 1) / 2 * innerWidth) + 'px'; meetTag.style.top = ((1 - v.y) / 2 * innerHeight - 14) + 'px'; }
 }
 controls.addEventListener('start', () => { if (meeting) meeting.until = 0; });
 function updateFalls() { FU.uFog.value.copy(scene.fog.color); FU.uFogD.value = scene.fog.density; FU.uLight.value = 0.55 + 0.45 * Math.min(1, sun.intensity / 3.6); }
