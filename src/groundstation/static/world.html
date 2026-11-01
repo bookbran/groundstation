@@ -1661,7 +1661,13 @@ function ambienceOn(ctx, brown) {
     const hiss = gain(0), rust = gain(0), flutter = gain(0.5), lfo = ctx.createOscillator(), depth = gain(0.5);
     loop(white).connect(filt('bandpass', 750, 0.45)).connect(hiss).connect(SOUND.layers.trees);
     loop(white).connect(filt('bandpass', shimmer ? 4300 : 3000, 0.9)).connect(flutter).connect(rust).connect(SOUND.layers.trees);
-    lfo.frequency.value = shimmer ? 13 : 6.5; lfo.connect(depth).connect(flutter.gain); lfo.start();
+    // leaves flicker at random, never on a beat: a steady wobble here chugged like a steam engine
+    // (2026-11-01, Dan: "sounds like a train engine from back in the day chugging"). The flutter is
+    // noise itself, slowed to a few random flickers a second.
+    lfo.disconnect && lfo.disconnect();
+    { const n = ctx.sampleRate * 6, b = ctx.createBuffer(1, n, ctx.sampleRate), d = b.getChannelData(0); let v = 0;
+      for (let k = 0; k < n; k++) { v = 0.9992 * v + 0.0008 * (Math.random() * 2 - 1) * 40; d[k] = v; }
+      const flick = loop(b); flick.connect(filt('lowpass', shimmer ? 9 : 5)).connect(depth).connect(flutter.gain); }
     AMB.wind = { hiss, rust, conifer: 1 - broad, broad, shimmer };
   }
   for (const s of SOUNDS) {
@@ -1705,8 +1711,9 @@ function startMover(line, now) {
     s.connect(gain(kind === 'train' ? 1.6 : 1.0)).connect(out);
   } else {
     add(loop(brown)).connect(filt('lowpass', kind === 'train' ? 220 : 380)).connect(gain(kind === 'train' ? 1.3 : 0.7)).connect(out);
-    const clack = gain(0), lfo = add(ctx.createOscillator()); lfo.type = 'square'; lfo.frequency.value = kind === 'train' ? 2.3 : 3.1; lfo.connect(gain(0.18)).connect(clack.gain); lfo.start();
-    add(loop(white)).connect(filt('bandpass', 2400, 2)).connect(clack).connect(out);
+    // the rail joints: soft, uneven clicks under the rumble, not a square-wave chug (2026-11-01)
+    const clack = gain(0); add(loop(white)).connect(filt('bandpass', 2400, 2)).connect(clack).connect(out);
+    line.clicks = { g: clack, next: now + 0.4 };
   }
   const speed = kind === 'planes' ? 75 : kind === 'train' ? 24 : 12;
   line.run = { pts, segs, out, p, srcs, s: 0, speed, kind, signals: [0.02, 0.55] };
@@ -1748,6 +1755,10 @@ function ambience(c, now) {
     const t = Math.min(1, (r.s - r.segs[i - 1]) / ((r.segs[i] - r.segs[i - 1]) || 1));
     ambAt.lerpVectors(r.pts[i - 1], r.pts[i], t); r.p.positionX.value = ambAt.x; r.p.positionY.value = ambAt.y; r.p.positionZ.value = ambAt.z;
     if (r.kind !== 'planes' && r.signals.length && frac > r.signals[0]) { r.signals.shift(); signal(r, now); }
+    if (L.clicks && now > L.clicks.next && frac < 0.9) {   // a wheel set over a rail joint, then its pair, at uneven gaps
+      const g = L.clicks.g.gain; for (const dtc of [0, 0.11 + Math.random() * 0.04]) { g.setValueAtTime(0.07, now + dtc); g.setTargetAtTime(0, now + dtc + 0.015, 0.012); }
+      L.clicks.next = now + 0.6 + Math.random() * 1.1;
+    }
     if (frac > 0.9 && !r.ending) { r.ending = true; r.out.gain.setTargetAtTime(0, now, 2); }
     if (frac >= 1) { r.srcs.forEach((n) => { try { n.stop(); } catch (_) {} }); r.out.disconnect(); L.run = null; }
   }
