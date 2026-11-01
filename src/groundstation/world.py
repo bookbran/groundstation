@@ -634,6 +634,7 @@ def write_world_html(world: dict[str, Any], path: str | Path) -> Path:
     """The template with the world's data embedded as base64 blocks: one file, no server."""
     page = TEMPLATE.read_text(encoding="utf-8").replace("__TITLE__", world["meta"]["name"]).replace("__WORLD__", "world")
     page = page.replace("/*__CITY_LAYER__*/", (TEMPLATE.parent / "city-layer.js").read_text(encoding="utf-8"))   # the city half of the page, in every world
+    page = page.replace("/*__EVENTS__*/", (TEMPLATE.parent / "events.js").read_text(encoding="utf-8"))   # what happens here: the profile's events
     blocks = [f'<script type="application/json" id="w-meta">{json.dumps(world["meta"])}</script>']
     blocks += [f'<script type="application/octet-stream" id="w-{k}">{v}</script>' for k, v in world["blocks"].items()]
     page = page.replace('<script type="module">', "\n".join(blocks) + '\n<script type="module">', 1)
