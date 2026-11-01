@@ -2024,7 +2024,11 @@ const sky = new Sky(); sky.scale.setScalar(240000); scene.add(sky);
 Object.assign(sky.material.uniforms.turbidity, { value: 4 });
 sky.material.uniforms.rayleigh.value = 1.6; sky.material.uniforms.mieCoefficient.value = 0.004; sky.material.uniforms.mieDirectionalG.value = 0.82;
 const sun = new THREE.DirectionalLight(0xffffff, 3.2);
-sun.castShadow = true; sun.shadow.mapSize.set(4096, 4096);
+// a graphics chip that shares the computer's memory (Intel's, most laptops') gets a smaller shadow map
+// (2026-11-01, Dan's Chrome closing itself on an Intel Arc: 4096² is 64 MB of shared memory per world)
+const GPU_NAME = (() => { try { const gl = renderer.getContext(), d = gl.getExtension('WEBGL_debug_renderer_info'); return d ? String(gl.getParameter(d.UNMASKED_RENDERER_WEBGL)) : ''; } catch (_) { return ''; } })();
+const SHARED_GPU = /intel|iris|uhd|arc|adreno|mali|apple/i.test(GPU_NAME);
+sun.castShadow = true; sun.shadow.mapSize.set(SHARED_GPU ? 2048 : 4096, SHARED_GPU ? 2048 : 4096);
 Object.assign(sun.shadow.camera, { left: -2600, right: 2600, top: 2600, bottom: -2600, near: 10, far: 20000 });
 sun.shadow.bias = -0.0004; sun.shadow.normalBias = 1.2;
 scene.add(sun, sun.target);
@@ -2397,7 +2401,7 @@ function flyAround(dt) {
   if (controls.target.y < g) controls.target.y = g;
 }
 const clock = new THREE.Clock(), v = new THREE.Vector3();
-renderer.setAnimationLoop(() => {
+const frame = () => {
   const dt = clock.getDelta();
   uniforms.uTime.value += dt;
   if (fly) {
@@ -2438,8 +2442,23 @@ renderer.setAnimationLoop(() => {
     t.el.style.display = show ? '' : 'none';
     if (show) { t.el.style.left = ((v.x + 1) / 2 * innerWidth) + 'px'; t.el.style.top = ((1 - v.y) / 2 * innerHeight - 14) + 'px'; }
   }
-});
+};
+renderer.setAnimationLoop(frame);
+const WORLD_LOOP = { pause: () => renderer.setAnimationLoop(null), resume: () => renderer.setAnimationLoop(frame) };
 const loading = document.getElementById('loading'); loading.style.opacity = 0; setTimeout(() => loading.remove(), 900);
+// LET THE GRAPHICS CHIP GO (2026-11-01, Dan: "my browser force closing way more often"): a world stops
+// drawing while it is out of sight, and hands its graphics memory back the moment it is closed or
+// swapped for another, instead of leaving it for Chrome to collect later
+let drawing = true;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden && drawing) { drawing = false; WORLD_LOOP.pause(); if (SOUND.ctx && SOUND.on) SOUND.ctx.suspend(); }
+  else if (!document.hidden && !drawing) { drawing = true; clock.getDelta(); WORLD_LOOP.resume(); if (SOUND.ctx && SOUND.on) SOUND.ctx.resume(); }
+});
+addEventListener('pagehide', () => {
+  try { renderer.setAnimationLoop(null); scene.traverse((o) => { if (o.geometry) o.geometry.dispose(); const m = o.material; for (const mm of Array.isArray(m) ? m : m ? [m] : []) { for (const k in mm) if (mm[k] && mm[k].isTexture) mm[k].dispose(); mm.dispose(); } }); renderer.dispose(); renderer.forceContextLoss(); } catch (_) {}
+  try { SOUND.ctx && SOUND.ctx.close(); } catch (_) {}
+});
+renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); renderer.setAnimationLoop(null); });
 </script>
 </body>
 </html>
