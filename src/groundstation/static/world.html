@@ -1008,6 +1008,7 @@ const buildingCount = CITY ? cityBuildings() : (() => {
 })();
 const signCount = CITY ? (indexEdges(), citySigns()) : 0;
 if (CITY) { cityScreens(); cityCrowd(); placeTagHeights(); }
+cityVehicles();
 touchTrees();
 touchCreatures();
 touchMaterials();

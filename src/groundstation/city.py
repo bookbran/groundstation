@@ -356,6 +356,107 @@ def inventory_trees(cfg, bbox, local):
     return out
 
 
+def crowns(cz, cc, rgb, origin):
+    """Every tree crown in a canopy height model, the way forestry lidar work finds them
+    (2026-11-01, Dan: "let's make these into real looking trees ... guessing well about what trees
+    these are"): the canopy smoothed, each peak at least 4 m high that stands above its
+    neighbourhood (wider for taller trees), its radius where the canopy falls to 55% of the peak,
+    and a guess at conifer or broadleaf from how pointed the crown is and how dark it is in the
+    aerial photo. origin is (x, y) of the grid's north-west corner in local metres. Returns rows
+    (x, y, height, radius, conifer)."""
+    H, W = cz.shape
+    box = lambda a: (np.pad(a, 1, mode='edge')[:-2, :-2] + np.pad(a, 1, mode='edge')[:-2, 1:-1] + np.pad(a, 1, mode='edge')[:-2, 2:] +
+                     np.pad(a, 1, mode='edge')[1:-1, :-2] + np.pad(a, 1, mode='edge')[1:-1, 1:-1] * 2 + np.pad(a, 1, mode='edge')[1:-1, 2:] +
+                     np.pad(a, 1, mode='edge')[2:, :-2] + np.pad(a, 1, mode='edge')[2:, 1:-1] + np.pad(a, 1, mode='edge')[2:, 2:]) / 10.0
+    sm = box(box(cz))
+    pad = np.pad(sm, 5, constant_values=0)
+    peak = sm >= 4.0
+    for dy in range(-5, 6):
+        for dx in range(-5, 6):
+            if (dx or dy) and dx * dx + dy * dy <= 25:
+                reach = max(abs(dx), abs(dy))
+                need = sm >= (4.0 + reach * 3.5)   # a taller tree claims a wider neighbourhood
+                peak &= ~(need & (pad[5 + dy:5 + dy + H, 5 + dx:5 + dx + W] > sm)) if reach > 2 else (sm >= pad[5 + dy:5 + dy + H, 5 + dx:5 + dx + W])
+    ys, xs = np.nonzero(peak)
+    _, ph, pw = rgb.shape
+    out = []
+    for y, x in zip(ys, xs):
+        h = float(sm[y, x])
+        rs = []
+        for ax, ay in ((1, 0), (-1, 0), (0, 1), (0, -1), (1, 1), (-1, 1), (1, -1), (-1, -1)):
+            st = (ax * ax + ay * ay) ** 0.5
+            k = 1
+            while k < 10:
+                i, j = x + ax * k, y + ay * k
+                if i < 0 or j < 0 or i >= W or j >= H or sm[j, i] < 0.55 * h or sm[j, i] > h * 1.03:
+                    break
+                k += 1
+            rs.append(k * st * cc)
+        r = float(np.clip(np.mean(rs), 1.2, 9.0))
+        half = [sm[min(H - 1, max(0, y + ay * max(1, int(r / cc / 2)))), min(W - 1, max(0, x + ax * max(1, int(r / cc / 2))))] for ax, ay in ((1, 0), (-1, 0), (0, 1), (0, -1))]
+        peaked = (h - float(np.mean(half))) / max(h, 1)
+        px, py = int((x + 0.5) / W * pw), int((y + 0.5) / H * ph)
+        win = np.nan_to_num(rgb[:, max(0, py - 2):py + 3, max(0, px - 2):px + 3]).reshape(3, -1).mean(axis=1)
+        luma = 0.3 * win[0] + 0.55 * win[1] + 0.15 * win[2]
+        # in a Pacific Northwest neighbourhood a crown over 22 m is nearly always a Douglas fir or its kin
+        conifer = h >= 22 or (h >= 15 and (luma < 85 or peaked > 0.14)) or (peaked > 0.24 and luma < 100)
+        out.append((origin[0] + (x + 0.5) * cc, origin[1] - (y + 0.5) * cc, h, r, bool(conifer)))
+    return out
+
+
+def vehicles(rgb, core_b, cx, cy, buildings, cap=400):
+    """The cars, vans and pickups an aerial photo shows, flattened on the streets and driveways
+    (2026-11-01, Dan: "the vehicles that appear flattened from satellite you'd guess at what they
+    are and model those too"): blobs that stand out from the pavement around them, car-shaped
+    (3.6 to 6.6 m long, 1.5 to 2.4 m wide, long and narrow), off roofs and lawns. Each comes back
+    with its place, length, width, heading, colour and a guess at its kind from its size."""
+    from rasterio.features import rasterize, shapes
+    from rasterio.transform import from_bounds
+    _, ph, pw = rgb.shape
+    f = max(1, int(round(pw / 2048)))   # about 0.3 m a pixel is plenty for a car
+    img = np.nan_to_num(rgb[:, :ph // f * f, :pw // f * f]).reshape(3, ph // f, f, pw // f, f).mean(axis=(2, 4))
+    _, h, w = img.shape
+    tf = from_bounds(core_b[0] - cx, core_b[1] - cy, core_b[2] - cx, core_b[3] - cy, w, h)
+    mpp = (core_b[2] - core_b[0]) / w
+    def blur(a, r):   # a box blur by an integral image
+        c = np.pad(a, ((r + 1, r), (r + 1, r)), mode='edge').cumsum(0).cumsum(1)
+        return (c[2 * r + 1:, 2 * r + 1:] - c[:-2 * r - 1, 2 * r + 1:] - c[2 * r + 1:, :-2 * r - 1] + c[:-2 * r - 1, :-2 * r - 1]) / (2 * r + 1) ** 2
+    r = max(4, int(3.0 / mpp))
+    bg = np.stack([blur(img[k], r) for k in range(3)])
+    diff = np.abs(img - bg).sum(axis=0)
+    leafy = (img[1] > img[0] * 1.06) & (img[1] > img[2] * 1.02)
+    paved = (np.abs(bg[0] - bg[1]) < 14) & (np.abs(bg[1] - bg[2]) < 18) & (bg[1] < bg[0] * 1.08)   # grey around it: a street or a drive
+    roofs = rasterize([({'type': 'Polygon', 'coordinates': [b['p'] + [b['p'][0]]]}, 1) for b in buildings if len(b.get('p', [])) > 2],
+                      out_shape=(h, w), transform=tf, fill=0).astype(bool) if buildings else np.zeros((h, w), bool)
+    cand = (diff > 55) & ~leafy & paved & ~roofs
+    out = []
+    for geom, val in shapes(cand.astype('uint8'), mask=cand, transform=tf):
+        ring = np.array(geom['coordinates'][0])
+        if len(ring) < 4:
+            continue
+        x, y = ring[:, 0], ring[:, 1]
+        area = 0.5 * abs(np.dot(x[:-1], y[1:]) - np.dot(x[1:], y[:-1]))
+        if not (4.5 < area < 17):
+            continue
+        cxm, cym = x.mean(), y.mean()
+        cov = np.cov(np.stack([x - cxm, y - cym]))
+        ev, evec = np.linalg.eigh(cov)
+        ax = evec[:, 1]
+        along = (x - cxm) * ax[0] + (y - cym) * ax[1]; across = -(x - cxm) * ax[1] + (y - cym) * ax[0]
+        L, Wd = float(along.max() - along.min()), float(across.max() - across.min())
+        if not (3.6 < L < 6.6 and 1.5 < Wd < 2.5 and 1.6 < L / Wd < 3.6):
+            continue
+        i, j = int((cxm - (core_b[0] - cx)) / mpp), int(((core_b[3] - cy) - cym) / mpp)
+        win = img[:, max(0, j - 2):j + 3, max(0, i - 2):i + 3].reshape(3, -1)
+        col = '#%02x%02x%02x' % tuple(int(np.clip(np.median(v), 0, 255)) for v in win)
+        kind = 'pickup' if L > 5.6 else ('van' if L > 4.9 and Wd > 1.95 else ('suv' if L > 4.7 else 'car'))
+        out.append({'at': [round(float(cxm), 1), round(float(cym), 1)], 'len': round(L, 2), 'wid': round(min(Wd, 2.1), 2),
+                    'yaw': round(float(np.arctan2(ax[1], ax[0])), 3), 'colour': col, 'kind': kind})
+        if len(out) >= cap:
+            break
+    return out
+
+
 def roof_colours(buildings, rgb, core_b, cx, cy):
     """Each roof's own colour from the aerial photo (2026-11-01, Dan: "build a thing that gets roof
     color and texture well"): the photo's pixels inside its footprint, leaving out leaves (a tree

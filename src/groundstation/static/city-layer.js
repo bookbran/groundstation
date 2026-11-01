@@ -130,6 +130,41 @@ function canopyShell() {
   const mesh = new THREE.Mesh(g, mat); mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh);
   return idx.length / 6;
 }
+// VEHICLES (2026-11-01, Dan: "the vehicles that appear flattened from satellite you'd guess at what
+// they are and model those too"): each one the aerial photo shows stands where it is parked, its
+// length, width and heading from the photo, its body the photo's colour, its kind a guess from its
+// size: a car, an SUV, a van or a pickup. Glass and tyres are dark; one draw per kind.
+function vehicleGeometry(kind) {
+  const parts = [], paint = (g, shade) => { g = g.index ? g.toNonIndexed() : g; g.deleteAttribute('uv'); const n = g.attributes.position.count, c = new Float32Array(n * 3).fill(shade); g.setAttribute('color', new THREE.BufferAttribute(c, 3)); parts.push(g); };
+  // one unit long (x), one wide (z), heights in metres
+  const H = { car: [0.62, 0.5, 0.55, -0.05], suv: [0.82, 0.62, 0.62, -0.08], van: [1.05, 0.85, 0.82, 0.12], pickup: [0.8, 0.6, 0.36, 0.12] }[kind] || [0.62, 0.5, 0.55, -0.05];
+  const [bodyH, cabH, cabL, cabOff] = H;
+  paint(new THREE.BoxGeometry(1, bodyH, 0.96).translate(0, 0.28 + bodyH / 2, 0), 1);                          // the body, its colour
+  paint(new THREE.BoxGeometry(cabL, cabH, 0.86).translate(cabOff, 0.28 + bodyH + cabH / 2, 0), 0.16);          // the cabin's glass
+  paint(new THREE.BoxGeometry(cabL * 0.9, 0.05, 0.88).translate(cabOff, 0.28 + bodyH + cabH, 0), 1);           // its roof, painted
+  if (kind === 'pickup') paint(new THREE.BoxGeometry(0.42, 0.12, 0.9).translate(-0.27, 0.28 + bodyH + 0.06, 0), 0.5);   // the bed's rim
+  for (const sx of [-0.33, 0.33]) for (const sz of [-0.46, 0.46]) paint(new THREE.CylinderGeometry(0.33, 0.33, 0.12, 12).rotateX(Math.PI / 2).translate(sx, 0.33, sz), 0.06);
+  return mergeGeometries(parts);
+}
+function cityVehicles() {
+  const list = Array.isArray(meta.vehicles) ? meta.vehicles : [];
+  if (!list.length) return 0;
+  const byKind = {};
+  for (const v of list) (byKind[v.kind] = byKind[v.kind] || []).push(v);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
+  for (const [kind, vs] of Object.entries(byKind)) {
+    const im = new THREE.InstancedMesh(vehicleGeometry(kind), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.45 }), vs.length);
+    vs.forEach((v, i) => {
+      // the photo's colour of a car is lit from above and a little washed out: deepen it a touch
+      col.set(v.colour); const hsl = {}; col.getHSL(hsl); col.setHSL(hsl.h, Math.min(1, hsl.s * 1.25), Math.max(0.06, Math.min(0.9, hsl.l * 0.92)));
+      im.setColorAt(i, col);
+      m4.compose(pos.set(v.at[0], sampleHeight(v.at[0], v.at[1]), -v.at[1]), q.setFromAxisAngle(up, v.yaw), sc.set(v.len, 1, v.wid));
+      im.setMatrixAt(i, m4);
+    });
+    im.castShadow = im.receiveShadow = true; scene.add(im);
+  }
+  return list.length;
+}
 // creatures: a cat (for now) that roams near where it was left, in its hours
 const CREATURES = [];
 function catModel(colour) {
