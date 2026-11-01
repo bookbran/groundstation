@@ -129,7 +129,7 @@ function eventsHtml(esc) {
   // each with a fitting open-licence photo of its kind of event (2026-11-01, event_photos.py), credited below
   const credits = EVENTS.filter((e) => e.img && e.img_credit).map((e) => '<a href="' + esc(e.img_credit.url) + '" target="_blank" rel="noopener">' + esc(e.title) + '</a> (' + esc(e.img_credit.licence || 'Commons') + ')');
   return '<div class="set events"><b>Happens here · press one to watch it</b>' + EVENTS.map((e, i) =>
-    '<button type="button" class="event' + (e.img ? ' has-ph' : '') + '" data-i="' + i + '">' + (e.img ? '<span class="ep" style="background-image:url('' + fileUrl(e.img) + '')"></span>' : '') +
+    '<button type="button" class="event' + (e.img ? ' has-ph' : '') + '" data-i="' + i + '">' + (e.img ? '<span class="ep" style="background-image:url(&quot;' + fileUrl(e.img) + '&quot;)"></span>' : '') +
     '<span class="etx"><span class="et">' + esc(e.title || e.kind) + '</span><span class="ew">' + esc((e.blurb || '') + when(e)) + '</span></span></button>').join('') +
     (credits.length ? '<div class="credit">photos, Wikimedia Commons: ' + credits.join(' · ') + '</div>' : '') + '</div>';
 }
