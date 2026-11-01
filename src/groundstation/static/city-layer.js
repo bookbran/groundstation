@@ -235,7 +235,7 @@ function cityBuildings() {
       if (L < 0.05) continue;
       const nx = dy / L, nz = dx / L;   // outward, in world x and z
       const quad = [[ax, base, -ay, u, 0], [bx, base, -by, u + L, 0], [bx, wallTop, -by, u + L, wallTop - base], [ax, base, -ay, u, 0], [bx, wallTop, -by, u + L, wallTop - base], [ax, wallTop, -ay, u, wallTop - base]];
-      for (const [x, y, z, uu, vv] of quad) { if (G) { G.P.push(x, y, z); G.N.push(nx, 0, nz); G.UV.push(uu, vv); continue; } P.push(x, y, z); N.push(nx, 0, nz); C.push(wc.r, wc.g, wc.b); UV.push(uu, vv); B.push(style, seed, 1); }
+      for (const [x, y, z, uu, vv] of quad) { if (G) { G.P.push(x, y, z); G.N.push(nx, 0, nz); G.UV.push(uu, vv); continue; } P.push(x, y, z); N.push(nx, 0, nz); C.push(wc.r, wc.g, wc.b); UV.push(uu, vv); B.push(pitched ? 3 : style, seed, 1); }
       rec.edges.push({ a: [ax, ay], b: [bx, by], L, n: [dy / L, -dx / L], used: 0 });
       u += L;
     }
@@ -279,13 +279,21 @@ function cityBuildings() {
       vec3 windows() {
         if (vB.z < 0.5) return vec3(0.0);
         float st = vB.x;
+        if (st > 2.5) {   // A HOUSE (2026-11-01, Dan: "the facades of these homes look like white rectangles"):
+          // a storey of about 2.9 m, windows a few metres apart with a little jitter, no shopfront
+          float cwH = 3.1 + vB.y * 1.2, fhH = 2.9;
+          vec2 cellH = vec2(floor(vUV.x / cwH), floor(vUV.y / fhH)), fH = vec2(fract(vUV.x / cwH), fract(vUV.y / fhH));
+          float skip = step(0.78, hb(cellH * 3.1 + vB.y));                           // not every bay has a window
+          float mH = step(abs(fH.x - 0.5 - (hb(cellH) - 0.5) * 0.2), 0.2) * step(abs(fH.y - 0.55), 0.24) * (1.0 - skip) * step(0.6, vUV.y);
+          return vec3(mH, step(hb(cellH + vB.y * 37.0), 0.4), hb(cellH * 1.7 + vB.y));
+        }
         float fh = st > 1.5 ? 4.0 : st > 0.5 ? 3.7 : 3.1;
         float cw = st > 1.5 ? 1.5 : st > 0.5 ? 2.2 + vB.y * 0.8 : 1.8 + vB.y * 1.6;
         vec2 cell = vec2(floor(vUV.x / cw), floor(vUV.y / fh));
         vec2 f = vec2(fract(vUV.x / cw), fract(vUV.y / fh));
         float wx = st > 1.5 ? 0.9 : st > 0.5 ? 0.7 : 0.5, wy = st > 1.5 ? 0.82 : 0.55;
         float m = step(abs(f.x - 0.5), wx * 0.5) * step(abs(f.y - 0.55), wy * 0.5);
-        if (vUV.y < 4.0) m = step(abs(fract(vUV.x / 4.5) - 0.5), 0.44) * step(0.35, vUV.y) * step(vUV.y, 3.3);
+        if (vUV.y < 4.0) m = step(abs(fract(vUV.x / 4.5) - 0.5), 0.44) * step(0.35, vUV.y) * step(vUV.y, 3.3);   // a shopfront (not a house)
         float lit = step(hb(cell + vB.y * 37.0), st > 1.5 ? 0.5 : 0.62);
         if (vUV.y < 4.0) lit = step(hb(vec2(floor(vUV.x / 4.5), vB.y * 11.0)), 0.85);
         return vec3(m, lit, hb(cell * 1.7 + vB.y));
@@ -294,8 +302,17 @@ function cityBuildings() {
         vec3 W = windows();
         // glass: dark, with blinds or curtains behind some panes, reflecting only at a glancing angle
         vec3 pane = mix(vec3(0.03, 0.04, 0.05), vec3(0.16, 0.15, 0.13), step(0.72, W.z) * 0.8);
+        if (vB.x > 2.5 && vB.z > 0.5) {   // a house wall: lap siding in its own colour, light trim round each window
+          float cwT = 3.1 + vB.y * 1.2, fhT = 2.9;
+          vec2 fT = vec2(fract(vUV.x / cwT), fract(vUV.y / fhT)), cT = vec2(floor(vUV.x / cwT), floor(vUV.y / fhT));
+          float hasWin = 1.0 - step(0.78, hb(cT * 3.1 + vB.y));
+          float trim = step(abs(fT.x - 0.5 - (hb(cT) - 0.5) * 0.2), 0.235) * step(abs(fT.y - 0.55), 0.28) * hasWin * step(0.6, vUV.y) * (1.0 - W.x);
+          diffuseColor.rgb *= 1.0 - 0.13 * smoothstep(0.0, 0.18, fract(vUV.y / 0.2)) * (1.0 - smoothstep(0.18, 0.3, fract(vUV.y / 0.2)));   // the shadow line under each board
+          diffuseColor.rgb = mix(diffuseColor.rgb, vec3(0.78, 0.76, 0.71), trim * 0.85);
+          diffuseColor.rgb *= 1.0 - 0.18 * (1.0 - smoothstep(0.0, 0.5, vUV.y));   // the foundation, darker at the foot
+        }
         diffuseColor.rgb = mix(diffuseColor.rgb, pane, W.x * 0.94);
-        if (vB.z > 0.5) diffuseColor.rgb *= 1.0 - 0.07 * step(fract(vUV.y / 3.6), 0.07);
+        if (vB.z > 0.5 && vB.x < 2.5) diffuseColor.rgb *= 1.0 - 0.07 * step(fract(vUV.y / 3.6), 0.07);
         // REAL ROOFS (2026-11-01, Dan: "build a thing that gets roof color and texture well"): within
         // the aerial photo a roof wears the photo of itself, shingles, patches, vents and panels;
         // where a tree hangs over it, or deep shadow, the roof's own colour (the builder's median) shows
@@ -315,7 +332,7 @@ function cityBuildings() {
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor = mix(metalnessFactor, 0.0, W.x);')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
         vec3 warm = mix(vec3(1.0, 0.74, 0.45), vec3(0.82, 0.9, 1.0), step(0.62, W.z));
-        float shop = step(vUV.y, 4.0) * vB.z;
+        float shop = step(vUV.y, 4.0) * vB.z * step(vB.x, 2.5);   // houses have no shopfront glow
         totalEmissiveRadiance += W.x * W.y * warm * uNight * (1.4 + 1.4 * W.z) * (1.0 - shop) + shop * W.x * W.y * vec3(1.0, 0.94, 0.84) * (0.5 + uNight * 3.5);`);
   };
   mat.customProgramCacheKey = () => 'city-buildings';
