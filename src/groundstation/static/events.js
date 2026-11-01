@@ -21,7 +21,10 @@ const EV = { active: null, mig: null, crowd: null };
 function setEventHour(e) { if (!e.hours) return; if (typeof setFollowNow === 'function') setFollowNow(false); tod.value = e.hours[0] + 0.05; setSun(Number(tod.value)); }
 function playEvent(e) {
   setEventHour(e);
-  if (e.kind === 'roost' && ROOST) { watchRoost(); ROOST.clock = 0; ROOST.speed = 3.6; }   // a press plays the evening in about a minute
+  // a press opens the evening partway in, at real speed (2026-11-01, Dan: "in regular time but in a way that is
+  // immediately rewarding"): half the flock already in the firs and more arriving, the swirl within
+  // about half a minute, the streams joining and the flight downtown a minute after that
+  if (e.kind === 'roost' && ROOST) { watchRoost(); ROOST.clock = 52; ROOST.speed = 1; }
   else if (e.kind === 'migration') startMigration(e);
   else if (e.kind === 'crowd') startCrowd(e);
   EV.active = e;

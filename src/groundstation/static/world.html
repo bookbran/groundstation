@@ -1183,7 +1183,7 @@ const ROOST = (() => {
     const t = roostTrees[i % roostTrees.length], a = rand() * 6.283, ea = rand() * 6.283;
     return { perch: new THREE.Vector3(t.x + Math.cos(a) * (0.6 + rand() * 1.6), t.g + t.h * (0.84 + rand() * 0.14), -(t.y + Math.sin(a) * (0.6 + rand() * 1.6))),
       entry: new THREE.Vector3(C[0] + Math.cos(ea) * 650, top + 50 + rand() * 40, -(C[1] + Math.sin(ea) * 650)),
-      arrive: 6 + rand() * 60, lift: 82 + rand() * 16, leave: 128 + rand() * 30, orb: 25 + rand() * 70, alt: 20 + rand() * 45, ph: rand() * 6.283, spd: 0.35 + rand() * 0.3 };
+      arrive: 6 + rand() * 60, lift: 82 + rand() * 16, leave: 128 + rand() * 30, orb: 25 + rand() * 70, alt: 20 + rand() * 45, ph: rand() * 6.283, v: 11 + rand() * 3 };
   });
   const joiners = Array.from({ length: nj }, (_, i) => {
     const side = i % 2 ? 1 : -1, off = 420 + rand() * 500;
@@ -1195,10 +1195,13 @@ const ROOST = (() => {
 const roostP = new THREE.Vector3(), roostQ = new THREE.Vector3(), roostQuat = new THREE.Quaternion(), roostMat = new THREE.Matrix4(), roostZero = new THREE.Matrix4().makeScale(0, 0, 0);
 function roostAt(c, T, out) {   // where crow c is at event time T, and whether it is sitting
   const R = ROOST;
-  if (T < c.arrive - 22) return null;
-  if (T < c.arrive) { const k = (T - (c.arrive - 22)) / 22, e = k * k * (3 - 2 * k); out.lerpVectors(c.entry, c.perch, e); out.y += Math.sin(k * Math.PI) * 18; return 'fly'; }
+  // every crow flies at a crow's real speed, about 12 m/s (2026-11-01, Dan: "those crows really zoom way too fast")
+  const fdur = c.fdur || (c.fdur = c.entry.distanceTo(c.perch) / c.v);
+  if (T < c.arrive - fdur) return null;
+  if (T < c.arrive) { const k = (T - (c.arrive - fdur)) / fdur, e = k < 0.85 ? k / 0.85 * 0.9 : 0.9 + (k - 0.85) / 0.15 * 0.1; out.lerpVectors(c.entry, c.perch, e); out.y += Math.sin(k * Math.PI) * 18; return 'fly'; }
   if (T < c.lift) { out.copy(c.perch); return 'sit'; }
-  const swirl = (t) => { const a = c.ph + t * c.spd; return new THREE.Vector3(R.C[0] + Math.cos(a) * c.orb, R.top + c.alt + Math.sin(t * 0.7 + c.ph) * 6, -(R.C[1] + Math.sin(a) * c.orb)); };
+  // round the grove at the same real speed, wide circles slower in turn
+  const swirl = (t) => { const a = c.ph + t * (c.v / c.orb); return new THREE.Vector3(R.C[0] + Math.cos(a) * c.orb, R.top + c.alt + Math.sin(t * 0.7 + c.ph) * 6, -(R.C[1] + Math.sin(a) * c.orb)); };
   if (T < c.lift + 8) { const k = (T - c.lift) / 8; out.lerpVectors(c.perch, swirl(T - c.lift), k * k * (3 - 2 * k)); return 'fly'; }
   if (T < c.leave) { out.copy(swirl(T - c.lift)); return 'fly'; }
   const from = swirl(c.leave - c.lift), d = (T - c.leave) * 15;
