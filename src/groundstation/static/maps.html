@@ -259,7 +259,8 @@
     } catch (_) {}
   }
 
-  let maps = [], current = decodeURIComponent(location.hash.slice(1)) || null, newest = null, frame = null;
+  // the map you were on comes back after a reload (Dan, 2026-10-31: "on refresh i come back where i was")
+  let maps = [], current = decodeURIComponent(location.hash.slice(1)) || localStorage.getItem('earth-maps.current') || null, known = null, frame = null, stamps = null;
   const GLYPH = {
     '3D': '<path d="M3 19l6-10 4 6 3-4 5 8z"/>',
     'Before / after': '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M12 3v18"/>',
@@ -277,12 +278,13 @@
   }
   const meta = (m, i) => `<b>${esc(m.kind)}</b> &middot; ${ago(m.mtime)}${i != null ? ' &middot; ' + (i + 1) + ' of ' + maps.length : ''}`;
 
-  function show(file) {
+  function show(file, force) {
     const m = maps.find((x) => x.file === file);
     if (!m) return;
-    const same = current === file && frame;
+    const same = !force && current === file && frame;
     current = file;
     history.replaceState(null, '', '#' + encodeURIComponent(file));
+    try { localStorage.setItem('earth-maps.current', file); } catch (_) {}
     if (!same) {
       // the new map loads underneath and fades in over the old one
       const f = document.createElement('iframe');
@@ -406,13 +408,30 @@
     try { maps = await (await fetch('/api/maps', { cache: 'no-store' })).json(); } catch { return; }
     if (!maps.length) { stage.innerHTML = '<div class="empty">No maps yet.<br>Ask for one in the chat and it lands here.</div>'; return; }
     const top = maps[0].file;
-    // a newly made map takes the stage the moment it lands
-    if (newest && top !== newest) show(top);
+    // a NEWLY MADE map takes the stage the moment it lands; one that was only
+    // rewritten (a world's page redrawn while it is being worked on) does not
+    // pull you away from the map you are on (Dan, 2026-10-31)
+    const fresh = known ? maps.find((m) => !known.has(m.file)) : null;
+    // the map you are on was redrawn: reload it in place (a world keeps your view itself)
+    const mine = maps.find((m) => m.file === current);
+    const redrawn = mine && stamps && stamps[current] && stamps[current] !== mine.mtime;
+    stamps = Object.fromEntries(maps.map((m) => [m.file, m.mtime]));
+    if (fresh) show(fresh.file);
+    else if (redrawn && frame) show(current, true);
     else if (!current || !maps.some((m) => m.file === current)) show(top);
     else if (!frame) show(current);
     else draw();
-    newest = top;
+    known = new Set(maps.map((m) => m.file));
   }
+  // A WORLD'S "Add your own touch" (2026-10-31): the world asks, this page passes it to the
+  // chat, worded so the agent studies the place and works inside the touch guidelines
+  window.addEventListener('message', (e) => {
+    const d = e.data;
+    if (!d || d.type !== 'living-world:add-touch' || !frame || e.source !== frame.contentWindow) return;
+    const world = String(d.world || 'this world').slice(0, 80), slug = String(d.slug || '').replace(/[^a-z0-9-]/gi, '').slice(0, 80);
+    window.parent.postMessage({ type: 'astrolabe:ask', text: 'Help me add a touch to ' + world + (slug ? ' (' + slug + ')' : '') +
+      ': read tools/earth-maps/worlds/touches/TOUCH.md and the touches it already has, look at what would make it most true to life, suggest two or three touches that fit the budget, and make the one I pick.' }, '*');
+  });
   paintTheme();
   setFold(folded);
   load();

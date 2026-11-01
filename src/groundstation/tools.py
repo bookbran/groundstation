@@ -5714,6 +5714,7 @@ def render_world(
     out_path: str | None = None,
     profile: dict[str, Any] | None = None,
     at: list[float] | None = None,
+    touches_dir: str | None = None,
 ) -> dict[str, Any]:
     """Build a living world: an open-world 3D scene of a place, as one HTML file.
 
@@ -5754,6 +5755,14 @@ def render_world(
     in flight, heard from where they are once the viewer turns sound on; every
     waterfall roars.
     at: [lon, lat] to build there instead of geocoding the name.
+    A profile with "setting": "city" builds a city instead of a landscape: a tight
+    frame (scale.core_km, scale.radius_km), measured building heights where a city
+    model covers (PLATEAU in Tokyo), a sharp aerial photo where one is published (GSI
+    in Japan), trees only where the city has them, lit windows and shop signs at
+    night, and the profile's places (to fly to) and recordings (Wikimedia Commons).
+    touches_dir: a folder of community touches, one per subfolder under
+    <touches_dir>/<world slug>/ (see touches.py for the format and the budget); each
+    is laid on at every build, credited by name, or reported as waiting or turned away.
 
     Returns {path, title, place, core, trees, sources, landmarks, caveats}. Read
     the caveats: where there is no lidar, tree heights are estimates, and tree
@@ -5761,7 +5770,7 @@ def render_world(
     """
     from groundstation import world as _world
 
-    w = _world.build_world(place, radius_km=radius_km, core_km=core_km, name=title, profile=profile, at=tuple(at) if at else None)
+    w = _world.build_world(place, radius_km=radius_km, core_km=core_km, name=title, profile=profile, at=tuple(at) if at else None, touches_dir=touches_dir)
     path = _artifact_path(out_path, "world", w["meta"]["name"])
     _world.write_world_html(w, path)
     m = w["meta"]

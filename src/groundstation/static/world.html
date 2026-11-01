@@ -39,6 +39,41 @@
   #life .credit { font: 9.5px "Roboto Mono", Consolas, monospace; color: rgba(243,237,228,.42); }
   #life .credit a { color: inherit; }
   .tag.meet { background: rgba(232,74,47,.8); }
+  .tag.place { pointer-events: auto; cursor: pointer; border: 0; font: 600 12px "Roboto Condensed", Bahnschrift, sans-serif; }
+  .tag.place:hover { background: rgba(232,74,47,.85); }
+  #life figure.place { cursor: pointer; width: 64px; }
+  #life figure.place .pic { width: 64px; height: 64px; display: grid; place-items: center; }
+  #life figure.place .pic i { font: 700 22px "Roboto Condensed", sans-serif; font-style: normal; color: rgba(255,255,255,.9); }
+  #life figure.place:hover .pic { transform: translateY(-3px); box-shadow: 0 6px 18px rgba(0,0,0,.45), 0 0 0 2px rgba(232,74,47,.75); }
+  #life figure.place figcaption { max-width: 64px; white-space: normal; height: 2.3em; }
+  #life figure.k-food .pic { background-color: #b5502a; } #life figure.k-street .pic { background-color: #8a6d1f; }
+  #life figure.k-landmark .pic { background-color: #9c2a2a; } #life figure.k-building .pic { background-color: #3e5266; }
+  #life figure.k-art .pic { background-color: #5b3a7a; } #life figure.k-view .pic { background-color: #2b6b6b; }
+  #life .touches { flex-direction: column; align-items: stretch; gap: 6px; }
+  #life .touch { display: grid; grid-template-columns: 12px 1fr; column-gap: 8px; font-size: 12.5px; line-height: 1.35; }
+  #life .touch.in { cursor: pointer; }
+  #life .touch.in:hover .tt { color: #E84A2F; }
+  #life .touch i { width: 8px; height: 8px; border-radius: 50%; margin-top: 5px; background: #E84A2F; }
+  #life .touch.wait i { background: rgba(243,237,228,.35); }
+  #life .touch.away i { background: transparent; box-shadow: inset 0 0 0 1.5px rgba(243,237,228,.5); }
+  #life .touch .tt { grid-column: 2; color: rgba(243,237,228,.92); }
+  #life .touch .by, #life .touch .why { grid-column: 2; font-size: 11px; color: rgba(243,237,228,.55); }
+  #life .touch .why { color: rgba(243,237,228,.7); }
+  #life .touch-none { font-size: 12px; color: rgba(243,237,228,.6); }
+  #life .add-touch { align-self: flex-end; margin-top: 4px; font: 600 12px "Roboto Condensed", Bahnschrift, sans-serif; letter-spacing: .02em;
+    padding: 7px 12px; border-radius: 9px; cursor: pointer; color: #f3ede4; background: rgba(232,74,47,.16); border: 1px solid rgba(232,74,47,.5); }
+  #life .add-touch:hover { background: rgba(232,74,47,.32); }
+  #placecard { position: absolute; left: 388px; bottom: 16px; z-index: 3; width: min(460px, calc(100vw - 410px)); display: flex; gap: 12px; padding: 12px 14px;
+    background: rgba(21,18,15,.62); backdrop-filter: blur(24px); border-radius: 14px; font-size: 13px; box-sizing: border-box; }
+  #placecard[hidden] { display: none; }
+  #placecard .ph { flex: none; width: 112px; height: 112px; border-radius: 10px; background: #2a2521 center / cover no-repeat; }
+  #placecard .tx { flex: 1; min-width: 0; }
+  #placecard b { font-size: 15px; display: block; }
+  #placecard .k { font: 600 10.5px "Roboto Condensed", sans-serif; letter-spacing: .14em; text-transform: uppercase; color: #E84A2F; }
+  #placecard p { margin: 6px 0 0; color: rgba(243,237,228,.78); line-height: 1.4; }
+  #placecard .hear { color: rgba(243,237,228,.6); font-size: 12px; }
+  #placecard a { font: 10px "Roboto Mono", monospace; color: rgba(243,237,228,.45); }
+  #placecard .x { position: absolute; top: 6px; right: 8px; background: none; border: 0; color: rgba(243,237,228,.6); font-size: 18px; cursor: pointer; }
   #loading { position: fixed; inset: 0; display: grid; place-items: center; z-index: 5; background: #0d0b0a; font-size: 15px; color: rgba(243,237,228,.7); transition: opacity .8s; }
   .tag { position: absolute; z-index: 1; transform: translate(-50%, -100%); pointer-events: none; white-space: nowrap;
     font: 600 12px "Roboto Condensed", Bahnschrift, sans-serif; letter-spacing: .03em; color: #fff; padding: 3px 8px; border-radius: 7px;
@@ -51,7 +86,8 @@
 </script>
 </head>
 <body>
-<div id="loading">Growing the forest…</div>
+<div id="loading">Building the world…</div>
+<div id="placecard" hidden></div>
 <div id="view"></div>
 <div id="panel">
   <h1>__TITLE__, a living world</h1>
@@ -111,7 +147,14 @@ for (const t of [corePhoto, farPhoto]) { t.colorSpace = THREE.SRGBColorSpace; t.
 
 // LIFE IN EVERY SURFACE: cloud shadows drift over ground, water and trees alike,
 // and foliage carries the two-layer wind (trunk gusts, branch flutter)
-const U = { uTime: { value: 0 }, uWind: { value: 0.35 }, uCloud: { value: 0.3 } };
+const U = { uTime: { value: 0 }, uWind: { value: 0.35 }, uCloud: { value: 0.3 },
+  uWet: { value: [new THREE.Vector4(0, 0, 0, -1e9), new THREE.Vector4(0, 0, 0, -1e9)] },   // spray reach per fall: x, z, reach, lip height
+  uSun: { value: new THREE.Vector3(0, 1, 0) }, uSunCol: { value: new THREE.Color(1, 1, 1) },
+  // photographed rock and moss from material touches: each map, and where (x, z, reach, metres per tile)
+  uRockMap: { value: null }, uMossMap: { value: null }, uMatR: { value: new THREE.Vector4(0, 0, 0, 6) }, uMatM: { value: new THREE.Vector4(0, 0, 0, 3) },
+  // a moss rule from a rule touch: x, z, reach, amount; and which way the faces it favours turn (x, z)
+  uMossRule: { value: new THREE.Vector4(0, 0, 0, 0) }, uMossFace: { value: new THREE.Vector2(0, -1) } };
+{ const blank = new THREE.DataTexture(new Uint8Array([128, 128, 128, 255]), 1, 1); blank.needsUpdate = true; U.uRockMap.value = blank; U.uMossMap.value = blank; }
 const uniforms = U;
 const NOISE = `
   float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -149,10 +192,15 @@ function living(mat, wind, rock) {
       #else
         vWP = (modelMatrix * vec4(transformed, 1.0)).xyz;
       #endif`);
-    sh.fragmentShader = 'uniform float uTime; uniform float uCloud; varying vec3 vWP;\n' + (wind ? 'varying float vRnd; varying float vLvl;\n' : '') + NOISE + String.fromCharCode(10) + sh.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
+    if (wind) { sh.uniforms.uSun = U.uSun; sh.uniforms.uSunCol = U.uSunCol; }
+    sh.fragmentShader = 'uniform float uTime; uniform float uCloud; varying vec3 vWP;\n' + (wind ? 'varying float vRnd; varying float vLvl; uniform vec3 uSun; uniform vec3 uSunCol;\n' : '') + NOISE + String.fromCharCode(10) + sh.fragmentShader.replace('#include <dithering_fragment>', `#include <dithering_fragment>
       gl_FragColor.rgb *= 1.0 - uCloud * clouds(vWP.xz);` + (wind ? `
       gl_FragColor.rgb += vec3(0.05, 0.07, 0.015) * max(0.0, 1.0 - gl_FragColor.g * 3.0);
-      gl_FragColor.rgb *= (0.86 + 0.28 * vRnd) * (vLvl > 1.5 ? vec3(1.08, 1.14, 1.0) : vec3(1.0));   // its own shade; lighter new growth at the tips` : ''));
+      gl_FragColor.rgb *= (0.86 + 0.28 * vRnd) * (vLvl > 1.5 ? vec3(1.03, 1.06, 1.0) : vec3(1.0));   // its own shade; lighter new growth at the tips
+      // sun through the leaves (2026-10-31): looking toward the sun, a crown glows warm
+      // yellow-green at its edges, the light coming through rather than off it
+      float through = pow(max(0.0, dot(normalize(vWP - cameraPosition), normalize(uSun))), 5.0);
+      gl_FragColor.rgb += uSunCol * vec3(0.55, 0.62, 0.18) * through * 0.32 * step(1.5, vLvl);` : ''));
   };
   if (rock) {
     const before = mat.onBeforeCompile;
@@ -164,7 +212,56 @@ function living(mat, wind, rock) {
         float rk = vn(vWP.xz / 3.5 + vWP.y / 5.0) * 0.55 + vn(vec2(vWP.x + vWP.z, vWP.y) / 1.8) * 0.45;
         vec3 basalt = mix(vec3(0.03, 0.028, 0.025), vec3(0.1, 0.092, 0.08), rk);   // wet dark basalt (light values, not screen values)
         basalt = mix(basalt, mix(vec3(0.035, 0.07, 0.018), vec3(0.09, 0.15, 0.035), vn(vWP.xz / 3.0 + vWP.y * 0.2)), smoothstep(0.3, 0.75, vn(vWP.xz / 7.0 + vWP.y * 0.05)) * 0.8);   // moss draped over it
-        diffuseColor.rgb = mix(diffuseColor.rgb, basalt, smoothstep(0.5, 0.78, steep) * 0.9);`);
+        // COLUMBIA RIVER BASALT (2026-10-31, Dan: "this rock face could use some work"): the
+        // cliffs are lava flows stacked in horizontal layers, each cracked into vertical
+        // columns; a photo taken from above means nothing on a wall, so it comes off them
+        float flowY = vWP.y / 17.0 + vn(vWP.xz / 90.0) * 1.6;
+        float layer = vn(vec2(flowY, 3.7));
+        float colonnade = smoothstep(0.45, 0.62, layer);              // the paler, cleanly columned layers
+        float run = (vWP.x + vWP.z) / mix(2.6, 1.3, colonnade);
+        float joint = abs(fract(run + vn(vec2(run * 0.17, vWP.y * 0.04)) * 0.7) - 0.5);
+        float crack = 1.0 - smoothstep(0.38, 0.49, joint) * mix(0.35, 0.85, colonnade);
+        float ledge = smoothstep(0.86, 0.96, fract(flowY));           // a dark line where one flow sits on the next
+        basalt *= mix(0.78, 1.35, colonnade) * (0.55 + 0.45 * crack) * (1.0 - 0.45 * ledge) * (0.8 + 0.4 * vn(vWP.xz / 11.0 + vWP.y / 6.0));
+        diffuseColor.rgb = mix(diffuseColor.rgb, basalt, smoothstep(0.42, 0.7, steep));
+        // LAYERED ROCK (2026-10-31, after Unreal's Substrate): where a material touch reaches,
+        // its photographed basalt lies on the steep faces and its moss where moss grows,
+        // fading in as you come close; the wet sheen goes on top of both
+        float camNear = 1.0 - smoothstep(300.0, 1400.0, distance(cameraPosition, vWP));
+        vec2 uvSteep = vec2(vWP.x + vWP.z, vWP.y), uvFlat = vWP.xz;
+        if (uMatR.z > 0.0) {
+          float inR = 1.0 - smoothstep(uMatR.z * 0.7, uMatR.z, distance(vWP.xz, uMatR.xy));
+          vec3 tR = mix(texture2D(uRockMap, uvFlat / uMatR.w).rgb, texture2D(uRockMap, uvSteep / uMatR.w).rgb, steep);
+          diffuseColor.rgb = mix(diffuseColor.rgb, tR * 0.42, smoothstep(0.45, 0.78, steep) * inR * camNear * 0.9);
+        }
+        if (uMatM.z > 0.0) {
+          float inM = 1.0 - smoothstep(uMatM.z * 0.7, uMatM.z, distance(vWP.xz, uMatM.xy));
+          float mossM = smoothstep(0.32, 0.72, vn(vWP.xz / 7.0 + vWP.y * 0.05)) * smoothstep(0.3, 0.6, steep);
+          // RULES AS TOUCHES (2026-10-31): a moss rule thickens it on the faces it names
+          if (uMossRule.z > 0.0) {
+            float inRule = 1.0 - smoothstep(uMossRule.z * 0.7, uMossRule.z, distance(vWP.xz, uMossRule.xy));
+            float facing = smoothstep(0.15, 0.7, dot(normalize(nW.xz + 1e-4), uMossFace));
+            mossM = max(mossM, uMossRule.w * facing * smoothstep(0.35, 0.65, steep) * (0.55 + 0.45 * vn(vWP.xz / 3.0 + vWP.y * 0.3)) * inRule);
+          }
+          vec3 tM = mix(texture2D(uMossMap, uvFlat / uMatM.w).rgb, texture2D(uMossMap, uvSteep / uMatM.w).rgb, steep);
+          diffuseColor.rgb = mix(diffuseColor.rgb, tM * 0.55, mossM * inM * camNear * 0.85);
+        }
+        // WET ROCK (2026-10-31, "air and light"): within a fall's spray the rock darkens and
+        // takes a sheen, most on the steep faces, in streaks where water runs down them
+        float wetK = 0.0;
+        for (int i = 0; i < 2; i++) {
+          vec4 w = uWet[i];
+          float d = distance(vWP.xz, w.xy);
+          wetK = max(wetK, (1.0 - smoothstep(w.z * 0.35, w.z, d)) * step(vWP.y, w.w + 6.0) * step(0.5, w.z));
+        }
+        float streak = 0.55 + 0.45 * vn(vec2((vWP.x + vWP.z) * 0.9, vWP.y * 0.05));
+        wetK *= mix(0.6, 1.0, steep) * streak;
+        diffuseColor.rgb *= 1.0 - 0.42 * wetK;`);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <roughnessmap_fragment>', `#include <roughnessmap_fragment>
+        roughnessFactor = mix(roughnessFactor, 0.24, wetK);`);
+      sh.uniforms.uWet = U.uWet;
+      Object.assign(sh.uniforms, { uRockMap: U.uRockMap, uMossMap: U.uMossMap, uMatR: U.uMatR, uMatM: U.uMatM, uMossRule: U.uMossRule, uMossFace: U.uMossFace });
+      sh.fragmentShader = 'uniform vec4 uWet[2]; uniform sampler2D uRockMap; uniform sampler2D uMossMap; uniform vec4 uMatR; uniform vec4 uMatM; uniform vec4 uMossRule; uniform vec2 uMossFace;\n' + sh.fragmentShader;
     };
   }
   mat.customProgramCacheKey = () => 'living-' + (wind ? 'w' : 's') + (rock ? 'r' : '');
@@ -290,6 +387,7 @@ const vn = (x, y) => { const i = Math.floor(x), j = Math.floor(y), fx = x - i, f
 const fbm = (x, y) => vn(x, y) * 0.5 + vn(x * 2.1 + 5.2, y * 2.1) * 0.3 + vn(x * 4.3, y * 4.3 + 1.7) * 0.2;
 const wob = (fl, u) => ((fbm(u / 45 + fl.h, 3.1) - 0.5) * 30 + (fbm(u / 11, 7.7) - 0.5) * 8) * Math.min(1, Math.abs(u) / 25);
 const HERO = FALLS.filter((fl) => fl.h >= 60).sort((a, b) => b.h - a.h).slice(0, 3);
+const WALL_LEDGES = [];   // where the built walls have a ledge facing up: x, height, z, size, moisture
 for (const fl of HERO) {
   // which way the land falls away here, over a few hundred metres: the face of the cliff
   const [li, lj] = cellAt(fl.xy[0], fl.xy[1]), q = Math.round(150 / cell);
@@ -351,7 +449,15 @@ const farMesh = terrain(farH, far.grid[0], far.grid[1], far.extent, 1, farPhoto,
 const coreMesh = terrain(coreH, cgw, cgh, core.extent, 2, corePhoto, null);
 coreMesh.receiveShadow = true;
 {
-  const stone = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, side: THREE.DoubleSide, envMapIntensity: 0.6 });
+  // THE WALL IS ROCK LIKE THE REST (2026-10-31, Dan: "still weird rock face"): the built
+  // amphitheatre wall wears the land's living rock material, so its faces are basalt flows
+  // and columns with the touches' photographed rock and moss, the moss rule and the wet
+  // sheen; its own colours stay only where it is not steep (ledges and the cap)
+  const stone = living(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.88, side: THREE.DoubleSide, envMapIntensity: 0.6 }), false, true);
+  { const before = stone.onBeforeCompile;
+    stone.onBeforeCompile = (sh) => { before(sh);
+      sh.fragmentShader = sh.fragmentShader.replace('#include <color_fragment>', '').replace('#include <map_fragment>', 'diffuseColor.rgb = vColor;\n#include <map_fragment>'); };
+    stone.customProgramCacheKey = () => 'living-wall'; }
   const leafy = new THREE.MeshStandardMaterial({ roughness: 0.85 });
   const blobs = [];
   for (const fl of HERO) {
@@ -414,7 +520,8 @@ coreMesh.receiveShadow = true;
     g.setAttribute('color', new THREE.BufferAttribute(col, 3));
     const wall = new THREE.Mesh(g, stone); wall.castShadow = wall.receiveShadow = true; scene.add(wall);
   }
-  if (blobs.length) {   // ferns, salal and moss mats hanging off the ledges
+  WALL_LEDGES.push(...blobs);   // LIFE ON THE CLIFF: planted below, once the trees are planned
+  if (false) {   // the old green blobs, kept for reference
     const n = Math.min(4000, blobs.length), im = new THREE.InstancedMesh(new THREE.IcosahedronGeometry(1, 0).scale(1.3, 0.7, 1.3), leafy, n);
     const m = new THREE.Matrix4(), q = new THREE.Quaternion(), s = new THREE.Vector3(), p = new THREE.Vector3(), c = new THREE.Color();
     for (let i = 0; i < n; i++) {
@@ -517,6 +624,8 @@ function card(len, wid, reg) {
   return mergeGeometries([mk(0), mk(Math.PI / 2)]);
 }
 const pale = (hex) => new THREE.Color(hex).lerp(new THREE.Color(0xffffff), 0.82).getHex();
+// a broadleaf's clusters keep more of the species' colour than needles do, each a little its own (2026-10-31)
+const leafTone = (hex, k) => new THREE.Color(hex).lerp(new THREE.Color(0xffffff), 0.6).offsetHSL(((k * 37) % 7 - 3) * 0.004, ((k * 13) % 5 - 2) * 0.02, ((k * 29) % 5 - 2) * 0.012).getHex();
 function finish(g, color, level, phase, shade = [0.72, 1.15], uvMode = 'drop') {
   g = g.index ? g.toNonIndexed() : g;
   if (uvMode === 'drop') g.deleteAttribute('uv');
@@ -536,10 +645,15 @@ function grow(r) {
     parts.push(finish(new THREE.CylinderGeometry(0.01, 0.018, 0.35, 5, 1, true).translate(0, 0.5, 0), 0xffffff, 0, 0, [0.7, 1.0], 'trunk'));
     for (let k = 0; k < r.clumps; k++) {
       const yy = 1 - (k + 0.5) / r.clumps * 2, rad = Math.sqrt(1 - yy * yy), th = k * GOLDEN;
+      // TREES THAT LOOK LIKE THEIR SPECIES (2026-10-31): more, smaller clusters, some
+      // tucked inside the crown; the outer and upper ones catch the light, the inner and
+      // lower ones sit in the crown's own shade, the way a real canopy reads
+      const inner = k % 4 === 3, reach = inner ? 0.55 : 1;
       const size = r.clump * 2.4 * (0.8 + 0.4 * ((k * 7) % 5) / 5), g = card(size, size, LEAF);
       g.translate(0, -size / 2, 0); g.rotateX((k % 3 - 1) * 0.5); g.rotateY(th);
-      g.translate(Math.cos(th) * rad * r.width, 0.66 + yy * 0.24, Math.sin(th) * rad * r.width);
-      parts.push(finish(g, pale(r.leaf), 2, (k * 0.37) % 1, [0.85, 1.2], 'keep'));
+      g.translate(Math.cos(th) * rad * r.width * reach, 0.66 + yy * 0.24, Math.sin(th) * rad * r.width * reach);
+      const lit = (inner ? 0.62 : 0.8) + 0.3 * (yy * 0.5 + 0.5);
+      parts.push(finish(g, leafTone(r.leaf, k), 2, (k * 0.37) % 1, [0.78 * lit, 1.08 * lit], 'keep'));
     }
     return mergeGeometries(parts);
   }
@@ -567,6 +681,7 @@ function cone(color, broad) {   // the far version of every species: one shape, 
 // structures). Each species there is a recipe and a rule: its form, colours,
 // share of the forest, whether it keeps to the water, its elevation band.
 const PROFILE = meta.profile || {};
+const CITY = meta.setting === 'city' && !!meta.city;
 const hex = (v, d) => (typeof v === 'string' && /^#?[0-9a-f]{6}$/i.test(v) ? parseInt(v.replace('#', ''), 16) : d);
 const DEFAULT_SPECIES = [
   { name: 'Douglas fir', form: 'conifer', needle: '#29452c', tip: '#3b6038', clear: 0.22, tiers: 11, width: 0.2, droop: 0.28, share: 0.5 },
@@ -575,7 +690,7 @@ const DEFAULT_SPECIES = [
   { name: 'red alder and bigleaf maple', form: 'broad', leaf: '#4f7a34', clear: 0.42, width: 0.22, share: 0.12, water: 'near', maxHeight: 28, tint: [1.2, 1.25, 0.85] },
 ];
 const SPECIES = (Array.isArray(PROFILE.species) && PROFILE.species.length ? PROFILE.species : DEFAULT_SPECIES).slice(0, 6).map((s) => s.form === 'broad'
-  ? { name: s.name, broad: true, leaf: hex(s.leaf, 0x4f7a34), clear: s.clear ?? 0.42, trunk: 0.02, clumps: s.clumps ?? 11, clump: s.clump ?? 0.11, width: s.width ?? 0.22,
+  ? { name: s.name, broad: true, leaf: hex(s.leaf, 0x4f7a34), clear: s.clear ?? 0.42, trunk: 0.02, clumps: s.clumps ?? 24, clump: s.clump ?? 0.085, width: s.width ?? 0.22,
       share: s.share ?? 0.2, water: s.water || 'any', elev: s.elev, maxHeight: s.maxHeight, tint: s.tint }
   : { name: s.name, needle: hex(s.needle, 0x29452c), tip: hex(s.tip, 0x3b6038), trunk: 0.016, clear: s.clear ?? 0.2, tiers: s.tiers ?? 11, whorl: 4,
       width: s.width ?? 0.2, taper: s.taper ?? 0.9, droop: s.droop ?? 0.35, share: s.share ?? 0.3, water: s.water || 'any', elev: s.elev, maxHeight: s.maxHeight, tint: s.tint });
@@ -686,14 +801,53 @@ const fernGeo = mergeGeometries(Array.from({ length: 6 }, (_, k) => {
   const g = card(1, 0.34, NEEDLE); g.rotateX(-1.05 - (k % 2) * 0.2); g.rotateY(k * Math.PI / 3);
   return finish(g, pale(hex((PROFILE.understory || {}).color, 0x4a7a30)), 2, (k * 0.21) % 1, [0.8, 1.15], 'keep');
 }));
+// LIFE ON THE CLIFF (2026-10-31, Dan: "aren't there also plenty of trees on this as part of
+// this rock face?"): wherever the laser found a ledge in a wall, a small fir or vine maple
+// has taken hold, and shrubs cling to the face between them. Each 3 m cell is tested once,
+// by hash, so the same plants are always there.
+function slopeAt(i, j) { return Math.max(Math.abs(hAt(i + 1, j) - hAt(i - 1, j)), Math.abs(hAt(i, j + 1) - hAt(i, j - 1))) / (2 * cell); }
+{
+  const cHash = (i, j, s) => { let x = (i * 374761393 + j * 668265263 + s * 1442695041) | 0; x = (x ^ (x >>> 13)) * 1274126177 | 0; return ((x ^ (x >>> 16)) >>> 0) / 4294967296; };
+  const firSp = SPECIES.findIndex((s) => !s.broad), shrubSp = SPECIES.findIndex((s) => s.broad && /maple|dogwood|alder/i.test(s.name));
+  const steepNear = (i, j) => { for (let dj = -2; dj <= 2; dj++) for (let di = -2; di <= 2; di++) if (slopeAt(i + di, j + dj) > 1.6) return true; return false; };
+  let added = 0;
+  for (let j = 2; j < cgh - 2 && added < 2600; j++) for (let i = 2; i < cgw - 2; i++) {
+    const sl = slopeAt(i, j);
+    if (sl < 0.55) continue;
+    const x = core.extent[0] + (i + cHash(i, j, 1)) * cell, y = core.extent[3] - (j + cHash(i, j, 2)) * cell;
+    if (carvedAt(x, y) || clearAt(x, y) || FALLS.some((fl) => Math.hypot(x - fl.xy[0], y - fl.xy[1]) < fl.w + 14)) continue;
+    const g = hAt(i, j);
+    if (g < waterY + 2) continue;
+    const onLedge = sl < 1.0 && steepNear(i, j), onFace = sl >= 1.6;
+    const r = cHash(i, j, 3);
+    if (onLedge && r < 0.32 && firSp >= 0) {
+      const broad = shrubSp >= 0 && cHash(i, j, 4) < 0.4;
+      plan.push({ x, y, g, h: broad ? 5 + cHash(i, j, 5) * 6 : 7 + cHash(i, j, 5) * 13, sp: broad ? shrubSp : firSp, rot: cHash(i, j, 6) * 6.283, wide: 0.7 + cHash(i, j, 7) * 0.3, tint: cHash(i, j, 8) });
+      added++;
+    } else if (onFace && r < 0.035 && shrubSp >= 0) {   // a shrub with its roots in a crack, leaning out
+      plan.push({ x, y, g: g - 1.5, h: 2.5 + cHash(i, j, 5) * 3, sp: shrubSp, rot: cHash(i, j, 6) * 6.283, wide: 1.1, tint: cHash(i, j, 8) });
+      added++;
+    }
+  }
+}
+// the built walls' ledges: a small fir or vine maple on some, ferns and salal on most
+{
+  const firSp = SPECIES.findIndex((sp) => !sp.broad), shrubSp = SPECIES.findIndex((sp) => sp.broad && /maple|dogwood|alder/i.test(sp.name));
+  for (const [x, gy, z, sc, m2] of WALL_LEDGES) {
+    const r = hn(x * 0.37, z * 0.71);
+    if (r < 0.16 && firSp >= 0) plan.push({ x, y: -z, g: gy - 0.4, h: 5 + hn(x, z) * 9, sp: firSp, rot: r * 40, wide: 0.75, tint: m2 });
+    else if (r < 0.27 && shrubSp >= 0) plan.push({ x, y: -z, g: gy - 0.4, h: 3 + hn(z, x) * 4, sp: shrubSp, rot: r * 40, wide: 1.1, tint: m2 });
+  }
+}
 const ferns = [];
+for (const [x, gy, z, sc] of WALL_LEDGES) if (hn(z * 0.5, x * 0.9) < 0.55) ferns.push({ x, y: -z, g: gy - 0.3, s: 0.9 + sc * 0.45, rot: hn(x, z) * 6.28 });
 for (const t of plan) {
   if (SPECIES[t.sp].broad || rand() > ((PROFILE.understory || {}).density ?? 0.55)) continue;
   const k = 1 + Math.floor(rand() * 3);
   for (let q = 0; q < k; q++) {
     const a = rand() * Math.PI * 2, d = 1.5 + rand() * (0.12 * t.h + 2);
     const fx = t.x + Math.cos(a) * d, fy = t.y + Math.sin(a) * d, [ci, cj] = cellAt(fx, fy);
-    if (clearAt(fx, fy)) continue;
+    if (clearAt(fx, fy) || slopeAt(ci, cj) > 0.9) continue;   // ferns stand on ground, not on a cliff
     ferns.push({ x: fx, y: fy, g: hAt(ci, cj), s: 1.2 + rand() * 1.6, rot: rand() * 6.28 });
   }
 }
@@ -789,9 +943,10 @@ function relod(force) {
   fernMesh.count = nfn; fernMesh.instanceMatrix.needsUpdate = true;
 }
 const keep = plan;   // for the facts line
+/*__CITY_LAYER__*/
 // STRUCTURES: every building OpenStreetMap knows in the core, its footprint
 // raised to its recorded height (or its storeys), walls and roofs coloured apart
-const buildingCount = (() => {
+const buildingCount = CITY ? cityBuildings() : (() => {
   const list = Array.isArray(meta.buildings) ? meta.buildings : [];
   if (!list.length) return 0;
   const wall = new THREE.Color(hex((PROFILE.structures || {}).wall, 0xc9c1b4)), roof = new THREE.Color(hex((PROFILE.structures || {}).roof, 0x6e6a66));
@@ -813,6 +968,11 @@ const buildingCount = (() => {
   mesh.castShadow = mesh.receiveShadow = true; scene.add(mesh);
   return geos.length;
 })();
+const signCount = CITY ? (indexEdges(), citySigns()) : 0;
+if (CITY) { cityScreens(); cityCrowd(); placeTagHeights(); }
+touchCreatures();
+touchMaterials();
+touchRules();
 // WILDLIFE (2026-10-31: "any birds that show up ... should only be those from
 // that region ... at the right proportional size and we can hear them"): the
 // birds recorded here (GBIF), each at its wingspan in metres. Those that fly
@@ -1059,6 +1219,114 @@ if (mistSeeds.length) {
   mg.setAttribute('seed', new THREE.Float32BufferAttribute(mistSeeds, 4)); mg.setAttribute('spot', new THREE.Float32BufferAttribute(mistSpots, 4));
   const mist = new THREE.Points(mg, mistMat); mist.frustumCulled = false; mist.renderOrder = 3; scene.add(mist);
 }
+// AIR AND LIGHT (2026-10-31, Dan: "make this even much more striking"; after
+// Unreal's volumetric fog and light through it): at each big fall, banks of mist
+// roll off the pool and drift down the gorge, glowing when you look toward the sun
+// through them, and shafts of sunlight slant through the spray. The spray's reach
+// wets the rock round it (the living material's WET ROCK).
+FALLS.slice().sort((a, b) => b.h - a.h).slice(0, 2).forEach((fl, i) => {
+  if (!fl.pool) return;
+  U.uWet.value[i].set(fl.pool.x, fl.pool.z, 30 + fl.h * 0.55, fl.lipY);
+});
+const airMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: U.uTime, uSun: U.uSun, uSunCol: U.uSunCol, uScale: { value: innerHeight * 0.5 }, uFog: FU.uFog, uFogD: FU.uFogD, uLight: FU.uLight },
+  transparent: true, depthWrite: false,
+  vertexShader: `#include <common>
+  #include <logdepthbuf_pars_vertex>
+  uniform float uTime; uniform float uScale; attribute vec4 seed; attribute vec4 spot; attribute vec3 drift;
+  varying float vA; varying float vDepth; varying vec3 vView; varying float vSeed;
+  void main() {
+    float t = fract(uTime * (0.012 + seed.x * 0.012) + seed.y);
+    float big = spot.w;
+    vec3 p = spot.xyz + drift * t * big * 1.6 + vec3(sin(seed.w * 6.283 + t * 2.0) * big * 0.25, t * big * (0.35 + seed.z * 0.4), cos(seed.w * 6.283 + t * 1.7) * big * 0.25);
+    vec4 mv = modelViewMatrix * vec4(p, 1.0); vDepth = -mv.z;
+    vView = normalize((modelMatrix * vec4(p, 1.0)).xyz - cameraPosition);
+    gl_Position = projectionMatrix * mv;
+    gl_PointSize = big * (0.5 + t * 0.9) * (0.6 + seed.z * 0.6) * uScale / max(1.0, -mv.z);
+    vA = sin(t * 3.14159) * (0.09 + seed.z * 0.07);
+    vSeed = seed.w;
+    #include <logdepthbuf_vertex>
+  }`,
+  fragmentShader: `#include <common>
+  #include <logdepthbuf_pars_fragment>
+  uniform float uTime; uniform vec3 uSun; uniform vec3 uSunCol; uniform vec3 uFog; uniform float uFogD; uniform float uLight;
+  varying float vA; varying float vDepth; varying vec3 vView; varying float vSeed;
+  float h2(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+  float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h2(i), h2(i + vec2(1.0, 0.0)), f.x), mix(h2(i + vec2(0.0, 1.0)), h2(i + 1.0), f.x), f.y); }
+  void main() {
+    #include <logdepthbuf_fragment>
+    vec2 q = gl_PointCoord - 0.5;
+    float d = length(q);
+    float wisp = vn(q * 3.0 + vSeed * 17.0 + uTime * 0.03) * 0.6 + vn(q * 7.0 - vSeed * 9.0) * 0.4;
+    float a = vA * smoothstep(0.5, 0.05, d) * (0.45 + 0.9 * wisp);
+    // light through mist: brightest looking toward the sun (forward scattering)
+    float fwd = pow(max(0.0, dot(normalize(vView), uSun)), 6.0);
+    vec3 col = vec3(0.86, 0.9, 0.93) * uLight + uSunCol * fwd * 1.4;
+    gl_FragColor = vec4(mix(col, uFog, 1.0 - exp(-uFogD * uFogD * vDepth * vDepth)), a * (1.0 + fwd * 1.6));
+  }` });
+const shaftMat = new THREE.ShaderMaterial({
+  uniforms: { uTime: U.uTime, uSun: U.uSun, uSunCol: U.uSunCol, uLight: FU.uLight },
+  transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+  vertexShader: `#include <common>
+  #include <logdepthbuf_pars_vertex>
+  uniform vec3 uSun; attribute vec4 shaft; varying vec2 vUv; varying float vSeed; varying vec3 vView;
+  void main() {
+    // a long ribbon along the sun's ray, turned about it to face the camera
+    vec3 A = normalize(uSun);
+    vec3 toCam = normalize(cameraPosition - shaft.xyz);
+    vec3 side = normalize(cross(A, toCam));
+    vec3 p = shaft.xyz + A * (position.y * shaft.w) + side * (position.x * shaft.w * 0.06);
+    vUv = position.xy + 0.5; vSeed = fract(shaft.x * 0.0137 + shaft.z * 0.0091);
+    vView = normalize(p - cameraPosition);
+    gl_Position = projectionMatrix * viewMatrix * vec4(p, 1.0);
+    #include <logdepthbuf_vertex>
+  }`,
+  fragmentShader: `#include <common>
+  #include <logdepthbuf_pars_fragment>
+  uniform float uTime; uniform vec3 uSun; uniform vec3 uSunCol; uniform float uLight;
+  varying vec2 vUv; varying float vSeed; varying vec3 vView;
+  void main() {
+    #include <logdepthbuf_fragment>
+    float across = smoothstep(0.0, 0.5, vUv.x) * smoothstep(1.0, 0.5, vUv.x);
+    float along = smoothstep(0.0, 0.35, vUv.y) * smoothstep(1.0, 0.55, vUv.y);
+    float flicker = 0.75 + 0.25 * sin(uTime * 0.35 + vSeed * 40.0);
+    float fwd = 0.25 + 0.75 * pow(max(0.0, dot(normalize(vView), normalize(uSun))), 3.0);
+    float low = 1.0 - smoothstep(0.35, 0.85, uSun.y);       // strongest with a low sun
+    gl_FragColor = vec4(uSunCol * uLight, 1.0) * across * across * along * flicker * fwd * (0.05 + 0.1 * low);
+  }` });
+{
+  const seeds = [], spots = [], drifts = [], shafts = [];
+  for (const fl of FALLS.slice().sort((a, b) => b.h - a.h).slice(0, 2)) {
+    if (!fl.pool || fl.h < 20) continue;
+    const down = new THREE.Vector3(fl.d.x, 0, -fl.d.y).normalize();
+    const n = Math.min(140, 50 + Math.round(fl.h * 0.6)), big = 10 + fl.h * 0.16;
+    for (let k = 0; k < n; k++) {
+      const r = Math.random() * big * 0.8, a = Math.random() * 6.283;
+      spots.push(fl.pool.x + Math.cos(a) * r, fl.pool.y + Math.random() * fl.h * 0.25, fl.pool.z + Math.sin(a) * r, big);
+      seeds.push(Math.random(), Math.random(), Math.random(), Math.random());
+      drifts.push(down.x * (0.4 + Math.random()), 0, down.z * (0.4 + Math.random()));
+    }
+    for (let k = 0; k < 9; k++) {   // shafts through the spray, centred on the fall's lower half
+      const v = 0.35 + Math.random() * 0.6, s = (Math.random() - 0.5) * (fl.w + fl.h * 0.25);
+      const side = new THREE.Vector3(fl.side.x, 0, -fl.side.y);
+      const at = fl.pool.clone().addScaledVector(side, s).add(new THREE.Vector3(0, fl.h * v * 0.6, 0));
+      shafts.push(at.x, at.y, at.z, fl.h * (0.8 + Math.random() * 0.7));
+    }
+  }
+  if (seeds.length) {
+    const g = new THREE.BufferGeometry();
+    g.setAttribute('position', new THREE.Float32BufferAttribute(new Float32Array(seeds.length / 4 * 3), 3));
+    g.setAttribute('seed', new THREE.Float32BufferAttribute(seeds, 4)); g.setAttribute('spot', new THREE.Float32BufferAttribute(spots, 4)); g.setAttribute('drift', new THREE.Float32BufferAttribute(drifts, 3));
+    const banks = new THREE.Points(g, airMat); banks.frustumCulled = false; banks.renderOrder = 4; scene.add(banks);
+  }
+  if (shafts.length) {
+    const base = new THREE.PlaneGeometry(1, 1, 1, 1), ig = new THREE.InstancedBufferGeometry();
+    ig.index = base.index; ig.setAttribute('position', base.attributes.position);
+    ig.setAttribute('shaft', new THREE.InstancedBufferAttribute(new Float32Array(shafts), 4)); ig.instanceCount = shafts.length / 4;
+    const rays = new THREE.Mesh(ig, shaftMat); rays.frustumCulled = false; rays.renderOrder = 5; scene.add(rays);
+  }
+}
 // ARCH BRIDGES at the falls (Benson Bridge): a stone arch across the gap, its deck
 // high over the lower pool, from the footprint OpenStreetMap draws
 for (const ab of (Array.isArray(meta.features) ? meta.features : []).filter((x) => x.kind === 'arch')) {
@@ -1098,7 +1366,7 @@ for (const ab of (Array.isArray(meta.features) ? meta.features : []).filter((x) 
       const [near, far] = plazaSide, sideOf = (Q) => Math.sign((Q[0] - P[0]) * es.x + (Q[1] - P[1]) * es.y) || 1;
       const out = (Q, k, f2) => [Q[0] + es.x * sideOf(Q) * k + e.x * f2, Q[1] + es.y * sideOf(Q) * k + e.y * f2];
       const loops = [[P, out(near, 22, 45), out(near, 6, 14), near], [far, out(far, 8, 12), out(far, 28, 40), [P[0] + es.x * sideOf(far) * 12, P[1] + es.y * sideOf(far) * 12]]];
-      const pathMat = new THREE.MeshStandardMaterial({ color: 0x5f584d, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+      const pathMat = new THREE.MeshStandardMaterial({ color: 0x4d4639, roughness: 1, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
       for (const pts of loops) {
         const dense = [];
         for (let i = 0; i + 1 < pts.length; i++) { const [p, q] = [pts[i], pts[i + 1]], n = Math.max(2, Math.ceil(Math.hypot(q[0] - p[0], q[1] - p[1]) / 2)); for (let k = 0; k < n; k++) dense.push([p[0] + (q[0] - p[0]) * k / n, p[1] + (q[1] - p[1]) * k / n]); }
@@ -1106,8 +1374,10 @@ for (const ab of (Array.isArray(meta.features) ? meta.features : []).filter((x) 
         const pos = [], idx = [];
         dense.forEach((p, i) => {
           const q = dense[Math.min(dense.length - 1, i + 1)], o = dense[Math.max(0, i - 1)], dx = q[0] - o[0], dy = q[1] - o[1], L = Math.hypot(dx, dy) || 1, nxp = -dy / L * 1.2, nyp = dx / L * 1.2;
-          for (const sd of [-1, 1]) { const x = p[0] + nxp * sd, y = p[1] + nyp * sd; pos.push(x, Math.max(smoothHeight(x, y), i === dense.length - 1 ? deck - 0.3 : -1e9) + 0.25, -y); }
-          if (i) idx.push((i - 1) * 2, i * 2, (i - 1) * 2 + 1, i * 2, i * 2 + 1, (i - 1) * 2 + 1);
+          // the trail lies on the ground (2026-10-31, Dan: "strange grey line around the bridge"):
+          // it no longer jumps up to the deck, and it breaks where the ground drops away
+          for (const sd of [-1, 1]) { const x = p[0] + nxp * sd, y = p[1] + nyp * sd; pos.push(x, smoothHeight(x, y) + 0.25, -y); }
+          if (i && Math.abs(pos[i * 6 + 1] - pos[(i - 1) * 6 + 1]) < 2.5 && Math.abs(pos[i * 6 + 4] - pos[(i - 1) * 6 + 4]) < 2.5) idx.push((i - 1) * 2, i * 2, (i - 1) * 2 + 1, i * 2, i * 2 + 1, (i - 1) * 2 + 1);
         });
         const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setIndex(idx); g.computeVertexNormals();
         const m = new THREE.Mesh(g, pathMat); m.receiveShadow = true; scene.add(m);
@@ -1137,6 +1407,9 @@ const LAYERS = [
   has(/^crowd$/) && ['crowd', 'Crowds'],
   has(/^play$/) && ['play', 'Kids playing'],
   has(/^planes$/) && ['planes', 'Planes'],
+  CITY && (CM.platforms || []).length && ['station', 'Station'],
+  CITY && (scramble || (CM.crossings || []).length) && ['crossing', 'Walk signals'],
+  CITY && (CM.recordings || []).some((r) => r.layer === 'people') && ['people', 'People'],
 ].filter(Boolean);
 SOUND.layers = {}; SOUND.level = {}; SOUND.muted = {};
 const applyLayer = (k) => { if (SOUND.layers[k]) SOUND.layers[k].gain.setTargetAtTime(SOUND.muted[k] ? 0 : SOUND.level[k], SOUND.ctx.currentTime, 0.08); };
@@ -1185,6 +1458,7 @@ async function soundOn() {
     SOUND.roar.push(src);
   }
   ambienceOn(ctx, noise);
+  if (CITY) await cityAudioOn(ctx);
 }
 function soundOff() { SOUND.on = false; if (SOUND.ctx) SOUND.ctx.suspend(); }
 function voice(name, at, near) {
@@ -1219,6 +1493,7 @@ function listen(dt) {
     if (earAt.distanceTo(c) < 900) voice(f.name, earAt, 40);
   }
   ambience(c, now);
+  if (CITY) cityAudio(c, now);
 }
 // the synthesised layers
 const AMB = { lines: [], points: [], movers: [], nextMover: {}, wind: null };
@@ -1287,6 +1562,9 @@ function startMover(line, now) {
     const lp = filt('lowpass', 500); add(loop(brown)).connect(lp).connect(gain(1.2)).connect(out);
     const o = add(ctx.createOscillator()); o.type = 'sawtooth'; o.frequency.value = 2900; o.connect(filt('bandpass', 2900, 8)).connect(gain(0.05)).connect(out); o.start();
     lp.frequency.setValueAtTime(400, now); lp.frequency.linearRampToValueAtTime(1600, now + 12);
+  } else if (CITY && REC['train-run']) {   // a real train's run, not a synthesised rumble
+    const s = add(ctx.createBufferSource()); s.buffer = REC['train-run']; s.loop = true; s.start(0, Math.random() * s.buffer.duration);
+    s.connect(gain(kind === 'train' ? 1.6 : 1.0)).connect(out);
   } else {
     add(loop(brown)).connect(filt('lowpass', kind === 'train' ? 220 : 380)).connect(gain(kind === 'train' ? 1.3 : 0.7)).connect(out);
     const clack = gain(0), lfo = add(ctx.createOscillator()); lfo.type = 'square'; lfo.frequency.value = kind === 'train' ? 2.3 : 3.1; lfo.connect(gain(0.18)).connect(clack.gain); lfo.start();
@@ -1440,12 +1718,51 @@ const inCore = (X, Y, pad = 30) => X > core.extent[0] - pad && X < core.extent[2
   fm.onBeforeCompile = (sh) => {
     base(sh);
     sh.vertexShader = 'attribute float aForest; varying float vForest;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vForest = aForest;');
-    sh.fragmentShader = 'varying float vForest;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
-      float camD = distance(cameraPosition, vWP);
-      float near = clamp(1.0 - camD / 9000.0, 0.0, 1.0);
-      vec2 q = vWP.xz / 7.0;
-      float crowns = vn(q) * 0.6 + vn(q * 2.3 + 3.1) * 0.4;
-      diffuseColor.rgb *= mix(1.0, 0.7 + 0.6 * crowns, vForest * near);`);
+    // THE CROWN FIELD (2026-10-31, the Nanite experiment; after Unreal 5.7's Nanite Foliage,
+    // which keeps a tree's detail at every distance without more triangles). Every far
+    // forest pixel works out which crown it sees: a field of crowns, one to each 8 m cell,
+    // pointed firs and round broadleaves, each its own height and shade. The view ray is
+    // marched down into the field, so crowns stand up and hide the gaps behind them as you
+    // look across the canopy; the hit is lit by the sun from the field's own slope, and the
+    // gaps fall into shadow. Fixed cost per pixel, no geometry; it fades to the crowns'
+    // average where a crown is smaller than a pixel, so nothing shimmers.
+    sh.uniforms.uSun = U.uSun;
+    sh.fragmentShader = 'varying float vForest; uniform vec3 uSun;\n' + sh.fragmentShader.replace('#include <map_fragment>', `#include <map_fragment>
+      {
+        float camD = distance(cameraPosition, vWP);
+        float fp = length(fwidth(vWP.xz));                              // metres a pixel covers here
+        float detail = (1.0 - smoothstep(3.0, 9.0, fp)) * vForest;
+        float avgShade = mix(1.0, 0.72, vForest);                     // the canopy's average, where crowns are sub-pixel
+        if (detail > 0.01) {
+          vec3 V = normalize(vWP - cameraPosition);
+          float H = 22.0;                                              // crown depth, metres
+          vec2 stepXZ = V.xz / max(0.12, -V.y) * H;                    // how far the ray runs across while dropping H
+          vec2 hit = vWP.xz, hc = vWP.xz; float hh = 0.0; float hid = 0.0; float lay = 1.0;
+          for (int k = 0; k < 8; k++) {
+            lay = 1.0 - (float(k) + 0.5) / 8.0;
+            vec2 p = vWP.xz + stepXZ * (1.0 - lay);
+            vec2 cp = p / 8.0, ci = floor(cp), bc = cp; float best = 0.0, bid = 0.0;
+            for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+              vec2 c = ci + vec2(float(x), float(y));
+              vec2 o = vec2(h2(c), h2(c + 17.3));
+              float r = 0.55 + 0.4 * h2(c + 5.1), d = length(cp - c - o) / r;
+              float dome = max(0.0, 1.0 - d * d), spire = max(0.0, 1.0 - d);
+              float h = mix(dome, spire * spire * 1.1, step(0.42, h2(c + 9.7))) * (0.62 + 0.38 * h2(c + 2.2));
+              if (h > best) { best = h; bid = h2(c + 3.3); bc = (c + o) * 8.0; }
+            }
+            hit = p; hh = best; hid = bid; hc = bc;
+            if (best >= lay) break;
+          }
+          // the crown's slope, from where on it the ray landed, for the sun
+          vec2 rough = vec2(vn(hit / 1.6 + 0.7), vn(hit / 1.6 + 4.1)) - 0.5;   // foliage clumps on the crown
+          vec3 n = normalize(vec3((hit.x - hc.x) * 0.22 + rough.x * 0.8, 1.0, (hit.y - hc.y) * 0.22 + rough.y * 0.8));
+          float sunLit = 0.62 + 0.55 * max(0.0, dot(n, normalize(uSun)));
+          float gap = smoothstep(0.0, 0.35, hh);                       // between crowns: deep shade
+          float shade = mix(0.32, 1.0, gap) * sunLit * (0.84 + 0.32 * hid);
+          vec3 tintC = mix(vec3(0.92, 1.0, 0.9), vec3(1.06, 1.04, 0.86), step(0.7, hid));   // the odd crown yellower
+          diffuseColor.rgb *= mix(vec3(avgShade), shade * tintC, detail);
+        } else diffuseColor.rgb *= avgShade;
+      }`);
   };
   fm.customProgramCacheKey = () => 'living-far-canopy';
   fm.needsUpdate = true;
@@ -1460,6 +1777,7 @@ const stream = (() => {
   const hash = (i, j, s) => { let x = (i * 374761393 + j * 668265263 + s * 2147483647) | 0; x = (x ^ (x >>> 13)) * 1274126177 | 0; return ((x ^ (x >>> 16)) >>> 0) / 4294967296; };
   let at = null, total = 0;
   function fill(force) {
+    if (CITY) return;   // a city has no forest beyond its parks
     const t = controls.target;
     if (!force && at && Math.hypot(at.x - t.x, at.z - t.z) < 250) return;
     at = t.clone();
@@ -1552,19 +1870,26 @@ scene.fog = new THREE.FogExp2(0xc9cfd6, 0.00002);
 const pmrem = new THREE.PMREMGenerator(renderer);
 let envRT = null;
 function setSun(hour) {
+  HOUR.value = hour;
   const k = (hour - 6) / 14;
-  const elev = Math.max(1.5, 64 * Math.sin(Math.PI * k));
+  const trueElev = 64 * Math.sin(Math.PI * k), elev = Math.max(1.5, trueElev);
+  // a city runs on into the night (2026-10-31): past dusk the sky goes dark, windows and signs light
+  const night = CITY ? THREE.MathUtils.smoothstep(hour, 17.4, 19.3) + (1 - THREE.MathUtils.smoothstep(hour, 4.9, 6.3)) : 0;
+  NIGHT.value = Math.min(1, night);
   const az = 90 + k * 180;   // east in the morning, west in the evening
   const phi = THREE.MathUtils.degToRad(90 - elev), theta = THREE.MathUtils.degToRad(az);
   const dir = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
   dir.set(Math.sin(theta) * Math.sin(phi), Math.cos(phi), -Math.cos(theta) * Math.sin(phi));
-  sky.material.uniforms.sunPosition.value.copy(dir);
+  if (CITY && trueElev < 1.5) { const sp = THREE.MathUtils.degToRad(90 - Math.max(-14, trueElev)); sky.material.uniforms.sunPosition.value.set(Math.sin(theta) * Math.sin(sp), Math.cos(sp), -Math.cos(theta) * Math.sin(sp)); }
+  else sky.material.uniforms.sunPosition.value.copy(dir);
   sun.position.copy(dir).multiplyScalar(8000); sun.target.position.set(0, 0, 0);
   const warm = THREE.MathUtils.clamp(1 - elev / 30, 0, 1);
   sun.color.setRGB(1, 1 - warm * 0.28, 1 - warm * 0.55);
-  sun.intensity = 0.6 + 3 * Math.min(1, elev / 25);
-  hemi.intensity = 0.25 + 0.45 * Math.min(1, elev / 25);
-  scene.fog.color.setRGB(0.78 - warm * 0.05, 0.8 - warm * 0.14, 0.84 - warm * 0.3);
+  U.uSun.value.copy(dir); U.uSunCol.value.copy(sun.color);
+  sun.intensity = (0.6 + 3 * Math.min(1, elev / 25)) * (1 - NIGHT.value * 0.97);
+  hemi.intensity = (0.25 + 0.45 * Math.min(1, elev / 25)) * (1 - NIGHT.value * 0.7);
+  if (CITY) { renderer.toneMappingExposure = 0.55 + NIGHT.value * 0.55; for (const m of signMats) m.color.setScalar(0.85 + NIGHT.value * 1.6); }
+  scene.fog.color.setRGB(0.78 - warm * 0.05, 0.8 - warm * 0.14, 0.84 - warm * 0.3).lerp(new THREE.Color(0.07, 0.075, 0.11), NIGHT.value * 0.92);
   // the sky lights the scene too: its reflection in the water, its tint on everything
   clearTimeout(setSun.env);
   setSun.env = setTimeout(() => {
@@ -1576,6 +1901,7 @@ function setSun(hour) {
   document.getElementById('todv').textContent = (hh % 12 || 12) + ':' + String(mm).padStart(2, '0') + (hh < 12 ? 'a' : 'p');
 }
 const tod = document.getElementById('tod'), wind = document.getElementById('wind'), haze = document.getElementById('haze');
+if (CITY) { tod.min = 5; tod.max = 23.9; tod.value = 18.9; }
 const setHaze = () => { scene.fog.density = 0.000004 + Number(haze.value) * 0.00004; document.getElementById('hazev').textContent = Math.round(haze.value * 100) + '%'; };
 const setWind = () => { uniforms.uWind.value = Number(wind.value); document.getElementById('windv').textContent = Math.round(wind.value * 100) + '%'; };
 document.getElementById('sound').onclick = async (e) => {
@@ -1628,6 +1954,16 @@ const views = {
   gorge: () => ({ pos: away(at(focus), at(across), 2600, 900), target: at(across, 200) }),
   hood: () => ({ pos: away(at(focus), peakAt, 9000, 9000), target: peakAt.clone().lerp(at(focus), 0.45) }),
 };
+if (CITY) {
+  const sky = PLACES.find((p) => p.top), stn = at(focus);
+  views.bridge = () => {   // on a corner of the Scramble, a little above the crowd
+    if (!scramble) return { pos: stn.clone().add(new THREE.Vector3(-120, 60, 120)), target: stn };
+    const C = new THREE.Vector3(scramble.xy[0], scramble.g, -scramble.xy[1]), off = new THREE.Vector3(stn.x - C.x, 0, stn.z - C.z).normalize().multiplyScalar(-((scramble.radius_m || 30) + 26));
+    return { pos: C.clone().add(off).add(new THREE.Vector3(0, 14, 0)), target: C.clone().add(new THREE.Vector3(0, 2, 0)) };
+  };
+  views.gorge = () => { if (sky && sky.roof) { const look = scramble ? new THREE.Vector3(scramble.xy[0], scramble.g, -scramble.xy[1]) : stn; const pos = new THREE.Vector3(sky.xy[0], sky.roof.top + 2.5, -sky.xy[1]); pos.addScaledVector(look.clone().sub(pos).setY(0).normalize(), 12); return { pos, target: look }; } return { pos: stn.clone().add(new THREE.Vector3(200, 250, 200)), target: stn }; };
+  views.hood = () => ({ pos: stn.clone().add(new THREE.Vector3(-650, 520, 700)), target: stn.clone() });
+}
 let fly = null;
 function go(name) {
   const v = views[name]();
@@ -1639,7 +1975,22 @@ if (FALLS.length) document.getElementById('goClose').textContent = FALLS.slice()
 document.getElementById('goAcross').onclick = () => go('gorge');
 document.getElementById('goBack').onclick = () => go('hood');
 document.getElementById('goAcross').textContent = 'Toward ' + across;
-const v0 = views.bridge(); camera.position.copy(v0.pos); controls.target.copy(v0.target); controls.update();
+if (CITY) {
+  document.getElementById('goClose').textContent = scramble ? scramble.name.replace(/^Shibuya /, 'The ') : 'Close in';
+  const sky = PLACES.find((p) => p.top); document.getElementById('goAcross').textContent = sky ? 'Up to ' + sky.name : 'Above the station';
+  document.getElementById('goBack').textContent = 'Over the station';
+}
+// YOU COME BACK WHERE YOU WERE (Dan, 2026-10-31: "on refresh i come back where i was"):
+// the view is kept per world as you move, and a reload opens on it
+const VIEW_KEY = 'living-world.view.__WORLD__';
+const v0 = views.bridge(); camera.position.copy(v0.pos); controls.target.copy(v0.target);
+try { const k = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); if (k && k.p && k.t) { camera.position.fromArray(k.p); controls.target.fromArray(k.t); if (k.h != null) { tod.value = k.h; setSun(Number(k.h)); } } } catch (_) {}
+controls.update();
+let viewSaved = 0;
+function keepView(now) {
+  if (now - viewSaved < 1500) return; viewSaved = now;
+  try { localStorage.setItem(VIEW_KEY, JSON.stringify({ p: camera.position.toArray().map((x) => +x.toFixed(2)), t: controls.target.toArray().map((x) => +x.toFixed(2)), h: Number(tod.value) })); } catch (_) {}
+}
 
 document.getElementById('facts').innerHTML =
   `${plan.length.toLocaleString()} trees in 4 species, forest streamed in around you to the horizon · ${ferns.length.toLocaleString()} ferns and shrubs · ${meta.trees.measured.toLocaleString()} trees measured by laser<br>` + (bridge ? `bridge found in the data: ${Math.round(bridge.a.distanceTo(bridge.b))} m, deck ${Math.round(bridge.deck - waterY)} m over the river<br>` : "") +
@@ -1664,10 +2015,25 @@ const picOf = (name) => { const p = PICS[name]; if (!p) return '';
   const birdTiles = [...flocks.map((x) => tile(x.name, 'bird', 'in the air, press to meet it')), ...perched.map((x) => tile(x.name, 'bird', 'on the ground, press to meet it'))];
   let html = '';
   if (birdTiles.length) html += '<div class="set"><b>Birds here · press one to hear it</b>' + birdTiles.join('') + '</div>';
-  if (SPECIES.length) html += '<div class="set"><b>The forest</b>' + SPECIES.map((s) => tile(s.name, 'tree', s.broad ? 'broadleaf' : 'conifer')).join('') + '</div>';
+  if (PLACES.length) html = '<div class="set places"><b>Places here · press one to go there and hear it</b>' + PLACES.map((p) => '<figure class="place k-' + esc(p.kind || 'place') + '" data-name="' + esc(p.name) + '" title="' + esc(p.name) + '"><div class="pic"' + (p.img ? ' style="background-image:url(\'' + fileUrl(p.img) + '\')"' : '') + '>' + (p.img ? '' : '<i>' + esc(p.name[0]) + '</i>') + '</div><figcaption>' + esc(p.name) + '</figcaption></figure>').join('') + '</div>' + html;
+  html += touchesHtml(esc);
+  if (SPECIES.length) html += '<div class="set"><b>' + (CITY ? 'Trees in the city' : 'The forest') + '</b>' + SPECIES.map((s) => tile(s.name, 'tree', s.broad ? 'broadleaf' : 'conifer')).join('') + '</div>';
   if (Object.keys(PICS).length) html += '<div class="credit">pictures: <a href="https://commons.wikimedia.org" target="_blank" rel="noopener">Wikimedia Commons</a>, each with its own licence</div>';
   if (html) { life.innerHTML = html; life.hidden = false; }
-  life.addEventListener('click', (e) => { const fig = e.target.closest('figure.bird'); if (fig) meet(fig.dataset.name, fig); });
+  life.addEventListener('click', (e) => { const fig = e.target.closest('figure.bird'); if (fig) meet(fig.dataset.name, fig);
+    const tt = e.target.closest('.touch.in'); if (tt) goToTouch(tt.dataset.id);
+    if (e.target.closest('.add-touch')) askForTouch();
+    const pf = e.target.closest('figure.place'); if (pf) { const p = PLACES.find((q) => q.name === pf.dataset.name); if (p) visit(p); } });
+}
+if (CITY) {
+  document.getElementById('about').textContent = (PROFILE.summary || '') + ' Drag the time of day past dusk and the windows and signs come on.';
+  const recs = CM.recordings || [];
+  document.getElementById('facts').innerHTML =
+    `${buildingCount.toLocaleString()} buildings at ${/plateau/i.test(meta.sources.buildings || JSON.stringify(PROFILE.sources || [])) ? 'measured heights (PLATEAU, MLIT Japan)' : 'their mapped heights'} · ${signCount.toLocaleString()} shop signs from OpenStreetMap<br>` +
+    `${plan.length.toLocaleString()} street and park trees · ${CROWD.n ? CROWD.n + ' people at the Scramble · ' : ''}${(CM.crossings || []).length} signalled crossings · ${(CM.platforms || []).length} platforms<br>` +
+    `photo: ${meta.sources.core_photo}<br>` +
+    (recs.length ? 'recordings: ' + recs.map((r) => `<a href="${r.credit.url}" target="_blank" rel="noopener" style="color:inherit">${r.label}</a> (${r.credit.licence}${r.note ? ', ' + r.note : ''})`).join(' · ') + '<br>' : '') +
+    ((PROFILE.synth || {}).note || '');
 }
 { const by = [...new Set(BIRDS.filter((b) => b.sound).map((b) => b.sound.credit.by))];
   if (by.length) document.getElementById('facts').innerHTML += '<br>bird voices: xeno-canto, recorded by ' + by.join(', ') + ' (Creative Commons)'; }
@@ -1793,13 +2159,22 @@ renderer.setAnimationLoop(() => {
   stream.fill();
   flyBirds(dt);
   updateFalls();
+  if (CITY) cityTick(dt, uniforms.uTime.value);
+  moveCreatures(dt, uniforms.uTime.value);
   listen(dt);
+  keepView(performance.now());
   keepMeeting(dt);
   // shadows follow what you are looking at, within the forest
   sun.target.position.copy(controls.target); sun.position.copy(sky.material.uniforms.sunPosition.value).multiplyScalar(8000).add(controls.target);
   if (waterNormals) { waterNormals.offset.x += dt * 0.0035; waterNormals.offset.y += dt * 0.0016; }
   if (farWater) { farWater.offset.x += dt * 0.0035 * 10.5; farWater.offset.y += dt * 0.0016 * 15.3; }
   if (composer) composer.render(dt); else renderer.render(scene, camera);
+  for (const t of placeTags) {
+    v.copy(t.pos).project(camera);
+    const show = v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05 && camera.position.distanceTo(t.pos) < 900;
+    t.el.style.display = show ? '' : 'none';
+    if (show) { t.el.style.left = ((v.x + 1) / 2 * innerWidth) + 'px'; t.el.style.top = ((1 - v.y) / 2 * innerHeight - 14) + 'px'; }
+  }
   for (const t of tags) {
     v.copy(t.pos).project(camera);
     const show = v.z < 1 && Math.abs(v.x) < 1.1 && Math.abs(v.y) < 1.1;

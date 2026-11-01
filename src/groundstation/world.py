@@ -25,6 +25,7 @@ import datetime as dt
 import io
 import json
 import math
+import os
 import re
 import urllib.parse
 import urllib.request
@@ -145,17 +146,20 @@ def _landmarks(bbox: list[float], name: str, lon: float, lat: float) -> list[dic
     return out
 
 
-def _buildings(core: list[float], crs: str, cx: float, cy: float, cap: int = 4000) -> list[dict]:
+def _buildings(core: list[float], crs: str, cx: float, cy: float, cap: int = 6000) -> list[dict]:
     """Every building OpenStreetMap has in the core: footprint in local metres, height from
     its height tag, else its storeys at 3.2 m, else 6 m."""
     from rasterio.warp import transform as warp_xy
 
     s, w, n, e = core[1], core[0], core[3], core[2]
-    q = f'[out:json][timeout:60];way["building"]({s},{w},{n},{e});out geom;'
+    q = f'[out:json][timeout:170][maxsize:536870912];way["building"]({s},{w},{n},{e});out geom;'
     try:
-        els = _json("https://overpass-api.de/api/interpreter?" + urllib.parse.urlencode({"data": q}), timeout=90).get("elements", [])
+        els = _json("https://overpass-api.de/api/interpreter?" + urllib.parse.urlencode({"data": q}), timeout=200).get("elements", [])
     except Exception:
         return []
+    # a dense city has far more than the cap: keep the ones nearest the middle, not the first returned
+    mx, my = (w + e) / 2, (s + n) / 2
+    els.sort(key=lambda el: ((el.get("geometry") or [{"lon": mx, "lat": my}])[0]["lon"] - mx) ** 2 + ((el.get("geometry") or [{"lon": mx, "lat": my}])[0]["lat"] - my) ** 2)
     out = []
     for el in els[:cap]:
         g = el.get("geometry") or []
@@ -167,7 +171,7 @@ def _buildings(core: list[float], crs: str, cx: float, cy: float, cap: int = 400
         except ValueError:
             hgt = 6.0
         xs, ys = warp_xy("EPSG:4326", crs, [q_["lon"] for q_ in g], [q_["lat"] for q_ in g])
-        out.append({"p": [[round(x - cx, 1), round(y - cy, 1)] for x, y in zip(xs, ys)][:-1], "h": round(min(hgt, 200), 1), "k": t.get("building", "yes")})
+        out.append({"id": f"osm:way/{el.get('id')}", "p": [[round(x - cx, 1), round(y - cy, 1)] for x, y in zip(xs, ys)][:-1], "h": round(min(hgt, 400), 1), "k": t.get("building", "yes")})
     return out
 
 
@@ -424,9 +428,26 @@ def _best_sentinel(far: list[float]) -> tuple[str, list[dict], float, bool]:
 
 
 def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str | None = None,
-                profile: dict | None = None, at: tuple[float, float] | None = None) -> dict[str, Any]:
-    """Gather and shape every layer of a world; returns the page's embedded blocks and its record."""
+                profile: dict | None = None, at: tuple[float, float] | None = None,
+                touches_dir: str | None = None) -> dict[str, Any]:
+    """Gather and shape every layer of a world; returns the page's embedded blocks and its record.
+
+    A profile with "setting": "city" builds a tight frame round the place with the city
+    layer (city.py): measured building heights where a city model covers (PLATEAU in
+    Tokyo), a sharp aerial photo where one is published (GSI in Japan), trees only where
+    the city has them, shop signs, crossings, platforms, places to visit and recordings.
+    touches_dir holds the community's touches (touches.py, one folder per touch under
+    <touches_dir>/<world slug>/), laid on at every build."""
     from rasterio.warp import transform as warp_xy, transform_bounds
+    import tempfile
+    from . import city as citylayer, touches as touchlayer
+
+    CITY = (profile or {}).get("setting") == "city"
+    if CITY:   # a city is a tight frame round the place, not a landscape
+        scale = (profile or {}).get("scale") or {}
+        if radius_km == 25: radius_km = scale.get("radius_km", 3)
+        if core_km == 4: core_km = scale.get("core_km", 1.2)
+    files = tempfile.mkdtemp(prefix="gs-world-")   # a city's pictures and sounds, embedded as blocks at the end
 
     lon, lat, found = (at[0], at[1], place) if at else _geocode(place)
     name = name or place.split(",")[0].strip()
@@ -437,6 +458,7 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
     core_b, far_b = transform_bounds("EPSG:4326", crs, *core), transform_bounds("EPSG:4326", crs, *far)
     cx, cy = (core_b[0] + core_b[2]) / 2, (core_b[1] + core_b[3]) / 2
     rel = lambda b: [round(b[0] - cx, 1), round(b[1] - cy, 1), round(b[2] - cx, 1), round(b[3] - cy, 1)]
+    local_xy = lambda lons, lats: [[round(x - cx, 1), round(y - cy, 1)] for x, y in zip(*warp_xy("EPSG:4326", crs, lons, lats))]
     in_us = 15 < lat < 72 and -170 < lon < -60
     blocks: dict[str, str] = {}
 
@@ -485,6 +507,9 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
         red = read_grid([f["assets"]["red"]["href"] for f in s2], crs, core_b, cpw, cph, nodata=0)
         nir = read_grid([f["assets"]["nir"]["href"] for f in s2], crs, core_b, cpw, cph, nodata=0)
         photo = f"Sentinel-2 {s2_day}"
+    sharp = citylayer.gsi_photo(core_b, crs, cpw, cph) if CITY else None
+    if sharp is not None:
+        rgb, photo = sharp, "GSI seamless aerial photo (Geospatial Information Authority of Japan)"
     blocks["core_photo"] = jpeg_b64(rgb)
 
     # trees: every treetop the lidar saw; elsewhere from the photo's green
@@ -499,10 +524,45 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
     jit = lambda n: (rng.random(n) - 0.5) * cell
     est_h = np.clip(18 + (veg[ey, ex] - 0.32) * 80 + rng.normal(0, 5, len(ey)), 8, 55)
     estimated = np.stack([core_b[0] + (ex + 0.5) * cell + jit(len(ex)) - cx, core_b[3] - (ey + 0.5) * cell + jit(len(ey)) - cy, ground[ey, ex], est_h, np.ones(len(ex))], axis=1)
+    city_osm = {}
+    if CITY:   # trees only where the city has them: mapped street trees and the green of its parks
+        from rasterio.features import rasterize
+        from rasterio.transform import from_bounds
+        city_osm = citylayer.osm_city(core, local_xy)
+        tf = from_bounds(core_b[0] - cx, core_b[1] - cy, core_b[2] - cx, core_b[3] - cy, gw, gh)
+        greens = [{"type": "Polygon", "coordinates": [g + [g[0]]]} for g in city_osm.get("greens", []) if len(g) > 2]
+        park = rasterize([(g, 1) for g in greens], out_shape=(gh, gw), transform=tf, fill=0).astype(bool) if greens else np.zeros((gh, gw), bool)
+        py_, px_ = np.nonzero(park & np.isfinite(veg) & (veg > 0.28) & (rng.random(veg.shape) < 0.16))
+        park_h = np.clip(14 + (veg[py_, px_] - 0.28) * 50 + rng.normal(0, 4, len(py_)), 7, 32)
+        park_trees = np.stack([core_b[0] + (px_ + 0.5) * cell + jit(len(px_)) - cx, core_b[3] - (py_ + 0.5) * cell + jit(len(py_)) - cy, ground[py_, px_], park_h, np.ones(len(px_))], axis=1)
+        st = [t for t in city_osm.get("trees", []) if core_b[0] - cx < t[0] < core_b[2] - cx and core_b[1] - cy < t[1] < core_b[3] - cy]
+        if st:
+            sx_, sy_ = np.array([t[0] for t in st]), np.array([t[1] for t in st])
+            ci = ((sx_ - (core_b[0] - cx)) / cell).astype(int).clip(0, gw - 1); cj = (((core_b[3] - cy) - sy_) / cell).astype(int).clip(0, gh - 1)
+            street = np.stack([sx_, sy_, ground[cj, ci], np.clip(rng.normal(11, 3, len(st)), 6, 20), np.ones(len(st))], axis=1)
+        else:
+            street = np.zeros((0, 5))
+        estimated = np.concatenate([park_trees, street])
     trees = np.concatenate([measured, estimated]).astype(np.float32)
     blocks["trees"] = base64.b64encode(trees.tobytes()).decode()
 
-    buildings = _buildings(core, crs, cx, cy)
+    buildings = None
+    if CITY:   # measured heights where a city model covers; the ring keeps only its skyline
+        inner = core_km / 2 * 1000
+        buildings = citylayer.plateau_buildings(far if radius_km <= 4 else [lon - 2.5 / kx, lat - 2.5 / ky, lon + 2.5 / kx, lat + 2.5 / ky], local_xy,
+                                                keep=lambda h, d: d < inner * 1.6 or h >= 45)
+        if buildings is not None:
+            ext = rel(core_b)
+            buildings = [b for b in buildings if (ext[0] < b["c"][0] < ext[2] and ext[1] < b["c"][1] < ext[3]) or b["h"] >= 45]
+        if buildings:
+            citylayer.attach_names(buildings, city_osm.get("named", []))
+    if not buildings:
+        buildings = _buildings(core, crs, cx, cy)
+    if CITY and sharp is not None:   # every crown the sharp photo sees on the streets, off the roofs
+        seen = citylayer.photo_trees(rgb, core_b, cx, cy, cell, ground, [b for b in buildings if "p" in b], estimated[:, :2].tolist(), rng)
+        estimated = np.concatenate([estimated, seen])
+        trees = np.concatenate([measured, estimated]).astype(np.float32)
+        blocks["trees"] = base64.b64encode(trees.tobytes()).decode()
     features = _features(core, crs, cx, cy)
     sounds = _soundscape(core, crs, cx, cy)
     birds = bird_life(core, profile)
@@ -533,7 +593,23 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
         "sources": {"ground": "USGS 3DEP lidar" if lidar.any() else "Copernicus DEM 30 m", "core_photo": photo,
                     "far_photo": f"Sentinel-2 {s2_day}", "terrain": "Copernicus DEM GLO-30"},
         "landmarks": marks, "buildings": buildings, "features": features, "sounds": sounds, "birds": birds, "portraits": portraits, "profile": profile or None,
+        "setting": "city" if CITY else "land",
     }
+    if CITY:   # the places to visit with their pictures, and the city's recordings, beside the world
+        pl = citylayer.places(profile, local_xy, files)
+        recs = citylayer.recordings(profile, local_xy, files, {p["name"]: p["xy"] for p in pl})
+        meta["city"] = {"signs": city_osm.get("signs", []), "crossings": city_osm.get("crossings", []), "platforms": city_osm.get("platforms", []),
+                        "places": pl, "recordings": recs, "synth": (profile or {}).get("synth") or {}}
+        meta["sources"]["buildings"] = "PLATEAU (MLIT Japan) via Indigo Lab" if buildings and "c" in buildings[0] else "OpenStreetMap"
+    # the community's touches, laid on top of today's build
+    slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")
+    meta["touches"], meta["touch_report"] = touchlayer.lay(meta, slug, files, local_xy, root=touches_dir) if touches_dir else ([], [])
+    # every file the city and the touches brought, inside the page as a block (city-layer.js fileUrl)
+    for dirpath, _, fns in os.walk(files):
+        for fn in fns:
+            full = os.path.join(dirpath, fn)
+            relp = os.path.relpath(full, files).replace(os.sep, "/").lower()
+            blocks["f-" + re.sub(r"[^a-z0-9]+", "-", relp)] = base64.b64encode(open(full, "rb").read()).decode()
     caveats = []
     if not lidar.any():
         caveats.append("no lidar here: the ground is 30 m terrain and every tree is placed from the photo's vegetation with an estimated height")
@@ -555,6 +631,7 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
 def write_world_html(world: dict[str, Any], path: str | Path) -> Path:
     """The template with the world's data embedded as base64 blocks: one file, no server."""
     page = TEMPLATE.read_text(encoding="utf-8").replace("__TITLE__", world["meta"]["name"]).replace("__WORLD__", "world")
+    page = page.replace("/*__CITY_LAYER__*/", (TEMPLATE.parent / "city-layer.js").read_text(encoding="utf-8"))   # the city half of the page, in every world
     blocks = [f'<script type="application/json" id="w-meta">{json.dumps(world["meta"])}</script>']
     blocks += [f'<script type="application/octet-stream" id="w-{k}">{v}</script>' for k, v in world["blocks"].items()]
     page = page.replace('<script type="module">', "\n".join(blocks) + '\n<script type="module">', 1)
