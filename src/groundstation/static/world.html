@@ -126,6 +126,7 @@
     <button id="goClose">Close in</button>
     <button id="goAcross">Across the land</button>
     <button id="goBack">Pull back</button>
+    <button id="goRoost" hidden>Crows to the roost</button>
   </div>
   <div id="life" hidden></div>
   <div class="facts" id="hint">scroll to fly toward the pointer · drag to look around (the view follows the mouse) · right-drag to move the way the mouse goes (up and down to rise and sink, sideways to slide) · Shift or Ctrl + drag, or middle-drag, to orbit the spot under the pointer · the compass turns, faces north and tilts · W A S D to glide, Q E down and up, Shift for speed</div>
@@ -1147,6 +1148,87 @@ for (const b of BIRDS) {
     perched.push({ im, birds, name: b.name, info: b });
   }
 }
+// THE CROWS GO TO ROOST (2026-11-01, Dan: "in the early evening hour, there are typically large flocks
+// of crows that gather in the doug fir trees and then join up with large flocks of other crows and
+// they fly into downtown portland"). A profile's roost: { species, count, hours: [from, to], toward:
+// [lon, lat] }. While the time of day is in its hours the evening plays out, wave after wave:
+// crows stream in and settle in the tops of the tallest conifers, cawing; they lift and wheel
+// above the grove; more streams join from either side; and the whole flock heads for the roost.
+const ROOST = (() => {
+  const R = PROFILE.roost; if (!R) return null;
+  const info = BIRDS.find((b) => new RegExp(R.species || 'crow', 'i').test(b.name)) || { name: R.species || 'American Crow', wingspan: 0.95, colour: '#121214' };
+  const [lon0, lat0] = meta.centre_lonlat, [lon1, lat1] = R.toward || [lon0 - 0.05, lat0 - 0.03];
+  const dir = new THREE.Vector2((lon1 - lon0) * 111320 * Math.cos(lat0 * Math.PI / 180), (lat1 - lat0) * 110570).normalize();
+  const perp = new THREE.Vector2(-dir.y, dir.x);
+  const tall = plan.filter((t) => !SPECIES[t.sp].broad && t.x > core.extent[0] && t.x < core.extent[2] && t.y > core.extent[1] && t.y < core.extent[3]).sort((a, b) => b.h - a.h).slice(0, 12);
+  const roostTrees = tall.length ? tall : plan.slice().sort((a, b) => b.h - a.h).slice(0, 8);
+  if (!roostTrees.length) return null;
+  const C = roostTrees.reduce((a, t) => [a[0] + t.x / roostTrees.length, a[1] + t.y / roostTrees.length], [0, 0]);
+  const top = Math.max(...roostTrees.map((t) => t.g + t.h));
+  const n = Math.min(160, R.count || 110), nj = Math.round(n * 0.7);
+  const flyM = new THREE.InstancedMesh(flyingBird(info), living(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, side: THREE.DoubleSide }), false), n + nj);
+  const sitM = new THREE.InstancedMesh(perchedBird(info), living(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }), false), n);
+  for (const m of [flyM, sitM]) { m.frustumCulled = false; m.castShadow = true; scene.add(m); }
+  const s = info.wingspan / 2 || 0.48;
+  const crows = Array.from({ length: n }, (_, i) => {
+    const t = roostTrees[i % roostTrees.length], a = rand() * 6.283, ea = rand() * 6.283;
+    return { perch: new THREE.Vector3(t.x + Math.cos(a) * (0.6 + rand() * 1.6), t.g + t.h * (0.84 + rand() * 0.14), -(t.y + Math.sin(a) * (0.6 + rand() * 1.6))),
+      entry: new THREE.Vector3(C[0] + Math.cos(ea) * 650, top + 50 + rand() * 40, -(C[1] + Math.sin(ea) * 650)),
+      arrive: 6 + rand() * 60, lift: 82 + rand() * 16, leave: 128 + rand() * 30, orb: 25 + rand() * 70, alt: 20 + rand() * 45, ph: rand() * 6.283, spd: 0.35 + rand() * 0.3 };
+  });
+  const joiners = Array.from({ length: nj }, (_, i) => {
+    const side = i % 2 ? 1 : -1, off = 420 + rand() * 500;
+    return { from: [C[0] + perp.x * side * off - dir.x * (150 + rand() * 250), C[1] + perp.y * side * off - dir.y * (150 + rand() * 250)], alt: top + 30 + rand() * 50,
+      start: 108 + rand() * 30, ph: rand() * 6.283 };
+  });
+  return { R, info, dir, perp, C, top, crows, joiners, flyM, sitM, s, clock: -1, cycle: 290, nextCaw: 0 };
+})();
+const roostP = new THREE.Vector3(), roostQ = new THREE.Vector3(), roostQuat = new THREE.Quaternion(), roostMat = new THREE.Matrix4(), roostZero = new THREE.Matrix4().makeScale(0, 0, 0);
+function roostAt(c, T, out) {   // where crow c is at event time T, and whether it is sitting
+  const R = ROOST;
+  if (T < c.arrive - 22) return null;
+  if (T < c.arrive) { const k = (T - (c.arrive - 22)) / 22, e = k * k * (3 - 2 * k); out.lerpVectors(c.entry, c.perch, e); out.y += Math.sin(k * Math.PI) * 18; return 'fly'; }
+  if (T < c.lift) { out.copy(c.perch); return 'sit'; }
+  const swirl = (t) => { const a = c.ph + t * c.spd; return new THREE.Vector3(R.C[0] + Math.cos(a) * c.orb, R.top + c.alt + Math.sin(t * 0.7 + c.ph) * 6, -(R.C[1] + Math.sin(a) * c.orb)); };
+  if (T < c.lift + 8) { const k = (T - c.lift) / 8; out.lerpVectors(c.perch, swirl(T - c.lift), k * k * (3 - 2 * k)); return 'fly'; }
+  if (T < c.leave) { out.copy(swirl(T - c.lift)); return 'fly'; }
+  const from = swirl(c.leave - c.lift), d = (T - c.leave) * 15;
+  out.set(from.x + R.dir.x * d + R.perp.x * Math.sin(T * 0.3 + c.ph) * 6, from.y + Math.min(40, d * 0.03), from.z - (R.dir.y * d + R.perp.y * Math.sin(T * 0.3 + c.ph) * 6));
+  return d < 3200 ? 'fly' : null;
+}
+function joinerAt(j, T, out) {
+  const R = ROOST; if (T < j.start) return null;
+  const t = T - j.start, merge = [R.C[0] + R.dir.x * 500, R.C[1] + R.dir.y * 500];
+  const L = Math.hypot(merge[0] - j.from[0], merge[1] - j.from[1]), d = t * 16;
+  if (d < L) { const k = d / L; out.set(j.from[0] + (merge[0] - j.from[0]) * k, j.alt + Math.sin(t * 0.5 + j.ph) * 4, -(j.from[1] + (merge[1] - j.from[1]) * k)); return 'fly'; }
+  const e = d - L; out.set(merge[0] + R.dir.x * e + R.perp.x * Math.sin(t * 0.3 + j.ph) * 8, j.alt + Math.min(40, e * 0.03), -(merge[1] + R.dir.y * e + R.perp.y * Math.sin(t * 0.3 + j.ph) * 8));
+  return e < 2800 ? 'fly' : null;
+}
+function roostTick(dt) {
+  const R = ROOST; if (!R) return;
+  const [h0, h1] = R.R.hours || [15.8, 17.6], h = HOUR.value, on = h >= h0 && h <= h1;
+  if (!on) { if (R.clock >= 0) { R.clock = -1; for (let i = 0; i < R.flyM.count; i++) R.flyM.setMatrixAt(i, roostZero); for (let i = 0; i < R.sitM.count; i++) R.sitM.setMatrixAt(i, roostZero); R.flyM.instanceMatrix.needsUpdate = R.sitM.instanceMatrix.needsUpdate = true; } return; }
+  R.clock = (Math.max(0, R.clock) + dt) % R.cycle;
+  const T = R.clock, s = R.s, cawers = [];
+  R.crows.forEach((c, i) => {
+    const st = roostAt(c, T, roostP);
+    if (st === 'sit') { roostMat.compose(roostP, roostQuat.setFromAxisAngle(birdUp, c.ph + Math.sin(U.uTime.value * 0.8 + c.ph) * 0.6), birdS.set(s * 0.9, s * 0.9, s * 0.9)); R.sitM.setMatrixAt(i, roostMat); R.flyM.setMatrixAt(i, roostZero); if (Math.random() < 0.02) cawers.push(roostP.clone()); }
+    else if (st === 'fly') {
+      roostAt(c, T + 0.2, roostQ); const dx = roostQ.x - roostP.x, dz = roostQ.z - roostP.z;
+      roostMat.compose(roostP, roostQuat.setFromAxisAngle(birdUp, Math.atan2(dx, dz)), birdS.set(s, s, s)); R.flyM.setMatrixAt(i, roostMat); R.sitM.setMatrixAt(i, roostZero);
+      if (Math.random() < 0.004) cawers.push(roostP.clone());
+    } else { R.flyM.setMatrixAt(i, roostZero); R.sitM.setMatrixAt(i, roostZero); }
+  });
+  R.joiners.forEach((j, k) => {
+    const i = R.crows.length + k, st = joinerAt(j, T, roostP);
+    if (st) { joinerAt(j, T + 0.2, roostQ); roostMat.compose(roostP, roostQuat.setFromAxisAngle(birdUp, Math.atan2(roostQ.x - roostP.x, roostQ.z - roostP.z)), birdS.set(s, s, s)); R.flyM.setMatrixAt(i, roostMat); }
+    else R.flyM.setMatrixAt(i, roostZero);
+  });
+  R.flyM.instanceMatrix.needsUpdate = R.sitM.instanceMatrix.needsUpdate = true;
+  if (SOUND.on && SOUND.buf[R.info.name] && U.uTime.value > R.nextCaw && cawers.length) {   // the racket of a roost gathering
+    voice(R.info.name, cawers[Math.floor(Math.random() * cawers.length)], 18); R.nextCaw = U.uTime.value + 0.35 + Math.random() * 0.6;
+  }
+}
 // THE FALLING WATER: per fall, a ribbon that leaves the lip, arcs out and widens
 // as it drops, streaks racing down it and its edges fraying; a foaming pool where
 // it lands; a mist that billows from the pool and spray shedding off the fall.
@@ -2033,6 +2115,15 @@ document.getElementById('goClose').onclick = () => go('bridge');
 if (FALLS.length) document.getElementById('goClose').textContent = FALLS.slice().sort((a, b) => b.h - a.h)[0].name;
 document.getElementById('goAcross').onclick = () => go('gorge');
 document.getElementById('goBack').onclick = () => go('hood');
+if (ROOST) {   // set the evening and go and stand by the grove to watch
+  const b = document.getElementById('goRoost'); b.hidden = false;
+  b.onclick = () => {
+    const [h0] = ROOST.R.hours || [15.8, 17.6]; if (typeof setFollowNow === 'function') setFollowNow(false);
+    tod.value = h0 + 0.05; setSun(Number(tod.value)); ROOST.clock = 0;
+    const C = new THREE.Vector3(ROOST.C[0], ROOST.top - 6, -ROOST.C[1]), from = new THREE.Vector3(-ROOST.dir.x, 0, ROOST.dir.y).normalize();
+    fly = { t: 0, p0: camera.position.clone(), t0: controls.target.clone(), p1: C.clone().addScaledVector(from, 140).setY(ROOST.top + 25), t1: C };
+  };
+}
 document.getElementById('goAcross').textContent = 'Toward ' + across;
 if (CITY) {
   document.getElementById('goClose').textContent = scramble ? scramble.name.replace(/^Shibuya /, 'The ') : 'Close in';
@@ -2288,6 +2379,7 @@ renderer.setAnimationLoop(() => {
   relod();
   stream.fill();
   flyBirds(dt);
+  roostTick(dt);
   updateFalls();
   if (CITY) cityTick(dt, uniforms.uTime.value);
   moveCreatures(dt, uniforms.uTime.value);
