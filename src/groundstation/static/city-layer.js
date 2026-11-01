@@ -271,8 +271,9 @@ function cityBuildings() {
   mat.onBeforeCompile = (sh) => {
     before(sh);
     sh.uniforms.uNight = NIGHT;
+    sh.uniforms.uPhoto = { value: corePhoto }; sh.uniforms.uExt = { value: new THREE.Vector4(core.extent[0], core.extent[1], core.extent[2], core.extent[3]) };
     sh.vertexShader = 'attribute vec2 aUV; attribute vec3 aB; varying vec2 vUV; varying vec3 vB;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\n vUV = aUV; vB = aB;');
-    sh.fragmentShader = `uniform float uNight; varying vec2 vUV; varying vec3 vB;
+    sh.fragmentShader = `uniform float uNight; uniform sampler2D uPhoto; uniform vec4 uExt; varying vec2 vUV; varying vec3 vB;
       float hb(vec2 p) { return fract(sin(dot(p, vec2(41.3, 289.1))) * 43758.5453); }
       // windows: a grid of floors and bays per building, its own spacing by kind; the shop floor is glass
       vec3 windows() {
@@ -294,7 +295,16 @@ function cityBuildings() {
         // glass: dark, with blinds or curtains behind some panes, reflecting only at a glancing angle
         vec3 pane = mix(vec3(0.03, 0.04, 0.05), vec3(0.16, 0.15, 0.13), step(0.72, W.z) * 0.8);
         diffuseColor.rgb = mix(diffuseColor.rgb, pane, W.x * 0.94);
-        if (vB.z > 0.5) diffuseColor.rgb *= 1.0 - 0.07 * step(fract(vUV.y / 3.6), 0.07);`)
+        if (vB.z > 0.5) diffuseColor.rgb *= 1.0 - 0.07 * step(fract(vUV.y / 3.6), 0.07);
+        // REAL ROOFS (2026-11-01, Dan: "build a thing that gets roof color and texture well"): within
+        // the aerial photo a roof wears the photo of itself, shingles, patches, vents and panels;
+        // where a tree hangs over it, or deep shadow, the roof's own colour (the builder's median) shows
+        if (vB.z < 0.5 && vWP.x > uExt.x && vWP.x < uExt.z && -vWP.z > uExt.y && -vWP.z < uExt.w) {
+          vec2 puv = vec2((vWP.x - uExt.x) / (uExt.z - uExt.x), (-vWP.z - uExt.y) / (uExt.w - uExt.y));
+          vec3 ph = texture2D(uPhoto, puv).rgb;
+          float leaf = step(ph.r * 1.06, ph.g) * step(ph.b * 1.02, ph.g), dk = step(ph.r + ph.g + ph.b, 0.05);
+          diffuseColor.rgb = mix(ph * 1.08, diffuseColor.rgb, max(leaf, dk) * 0.92);
+        }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = mix(roughnessFactor, 0.22, W.x);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor = mix(metalnessFactor, 0.0, W.x);')
       .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>

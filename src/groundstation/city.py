@@ -54,7 +54,7 @@ def fetch(url, timeout=60, tries=3):
         except urllib.error.HTTPError as ex:
             if ex.code == 404:
                 return None
-            if ex.code == 429 and k < tries - 1:
+            if (ex.code == 429 or ex.code >= 500) and k < tries - 1:
                 time.sleep(4 + 6 * k); continue
             raise
         except Exception:
@@ -68,8 +68,20 @@ def jget(url, timeout=60):
     return json.loads(b) if b else None
 
 
+OVERPASS_SERVERS = [OVERPASS, 'https://overpass.kumi.systems/api/interpreter', 'https://overpass.private.coffee/api/interpreter']
+
+
 def overpass(q, timeout=200):
-    return (jget(OVERPASS + '?' + urllib.parse.urlencode({'data': q}), timeout) or {}).get('elements', [])
+    """Each OpenStreetMap server in turn, twice, so one being down does not empty a city."""
+    last = None
+    for attempt in range(2):
+        for url in OVERPASS_SERVERS:
+            try:
+                return (jget(url + '?' + urllib.parse.urlencode({'data': q}), timeout) or {}).get('elements', [])
+            except Exception as ex:
+                last = ex
+                time.sleep(2 + attempt * 4)
+    raise last
 
 
 def inside(pt, poly):
@@ -316,6 +328,72 @@ def photo_trees(rgb, core_b, cx, cy, cell, ground, buildings, known, rng):
         X, Y, xs, ys = X[keep], Y[keep], xs[keep], ys[keep]
     H = np.clip(7 + canopy[ys, xs] * 14 + rng.normal(0, 2.5, len(xs)), 6, 22)
     return np.stack([X, Y, ground[ys, xs], H, np.ones(len(xs))], axis=1)
+
+
+def inventory_trees(cfg, bbox, local):
+    """A city's own street tree inventory (an ArcGIS feature layer: Portland publishes every
+    street tree with its species and trunk), as [{'at': [x, y], 'name': common name, 'dbh': in}]."""
+    w, s, e, n = bbox
+    out, off = [], 0
+    while True:
+        q = urllib.parse.urlencode({'where': '1=1', 'geometry': f'{w},{s},{e},{n}', 'geometryType': 'esriGeometryEnvelope', 'inSR': 4326,
+                                    'spatialRel': 'esriSpatialRelIntersects', 'outFields': f"{cfg.get('species_field', 'Common')},{cfg.get('dbh_field', 'DBH')}",
+                                    'returnGeometry': 'true', 'outSR': 4326, 'f': 'json', 'resultOffset': off, 'resultRecordCount': 2000})
+        try:
+            d = jget(cfg['url'].rstrip('/') + '/query?' + q, 60) or {}
+        except Exception as ex:
+            say('street tree inventory did not answer (' + str(ex)[:60] + ')'); break
+        feats = d.get('features') or []
+        for f in feats:
+            g, a = f.get('geometry') or {}, f.get('attributes') or {}
+            if 'x' not in g:
+                continue
+            out.append({'at': local([g['x']], [g['y']])[0], 'name': str(a.get(cfg.get('species_field', 'Common')) or '').strip(),
+                        'dbh': float(a.get(cfg.get('dbh_field', 'DBH')) or 0)})
+        if len(feats) < 2000 or not d.get('exceededTransferLimit', len(feats) == 2000):
+            break
+        off += 2000
+    return out
+
+
+def roof_colours(buildings, rgb, core_b, cx, cy):
+    """Each roof's own colour from the aerial photo (2026-11-01, Dan: "build a thing that gets roof
+    color and texture well"): the photo's pixels inside its footprint, leaving out leaves (a tree
+    over the roof) and deep shadow, their median. Sets b['roof'] unless OpenStreetMap gave one;
+    returns how many roofs it coloured."""
+    from rasterio.features import rasterize
+    from rasterio.transform import from_bounds
+    _, ph, pw = rgb.shape
+    tf = from_bounds(core_b[0] - cx, core_b[1] - cy, core_b[2] - cx, core_b[3] - cy, pw, ph)
+    idx = [i for i, b in enumerate(buildings) if len(b.get('p', [])) > 2 and (not b.get('roof') or b.get('roof_from') == 'photo')]
+    if not idx:
+        return 0
+    lab = rasterize([({'type': 'Polygon', 'coordinates': [buildings[i]['p'] + [buildings[i]['p'][0]]]}, k + 1) for k, i in enumerate(idx)],
+                    out_shape=(ph, pw), transform=tf, fill=0, dtype='int32')
+    r, g, b_ = (np.nan_to_num(rgb[k]).astype(np.float32) for k in range(3))
+    leafy = (g > r * 1.06) & (g > b_ * 1.02)
+    dark = (r + g + b_) < 75
+    ok = (lab > 0) & ~leafy & ~dark
+    L, R, G, B = lab[ok], r[ok], g[ok], b_[ok]
+    order = np.argsort(L, kind='stable'); L, R, G, B = L[order], R[order], G[order], B[order]
+    cuts = np.flatnonzero(np.diff(L)) + 1
+    done = 0
+    for seg_l, seg_r, seg_g, seg_b in zip(np.split(L, cuts), np.split(R, cuts), np.split(G, cuts), np.split(B, cuts)):
+        if len(seg_l) < 12:
+            continue
+        i = idx[int(seg_l[0]) - 1]
+        buildings[i]['roof'] = '#%02x%02x%02x' % tuple(int(np.clip(np.median(v), 0, 255)) for v in (seg_r, seg_g, seg_b)); buildings[i]['roof_from'] = 'photo'
+        done += 1
+    return done
+
+
+def roof_mask(buildings, core_b, cx, cy, gw, gh):
+    """Which 3 m cells a building covers, so a laser return off a roof is not taken for a tree."""
+    from rasterio.features import rasterize
+    from rasterio.transform import from_bounds
+    tf = from_bounds(core_b[0] - cx, core_b[1] - cy, core_b[2] - cx, core_b[3] - cy, gw, gh)
+    shapes = [({'type': 'Polygon', 'coordinates': [b['p'] + [b['p'][0]]]}, 1) for b in buildings if len(b.get('p', [])) > 2]
+    return rasterize(shapes, out_shape=(gh, gw), transform=tf, fill=0).astype(bool) if shapes else np.zeros((gh, gw), bool)
 
 
 def wiki_summary(title, lang='en'):

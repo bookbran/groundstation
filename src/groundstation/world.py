@@ -563,6 +563,8 @@ def build_world(place: str, radius_km: float = 25, core_km: float = 4, name: str
         estimated = np.concatenate([estimated, seen])
         trees = np.concatenate([measured, estimated]).astype(np.float32)
         blocks["trees"] = base64.b64encode(trees.tobytes()).decode()
+    if CITY and buildings:   # each roof's own colour from the aerial photo (the page lays the photo on the roofs too)
+        citylayer.roof_colours([b for b in buildings if "p" in b], rgb, core_b, cx, cy)
     features = _features(core, crs, cx, cy)
     sounds = _soundscape(core, crs, cx, cy)
     birds = bird_life(core, profile)
