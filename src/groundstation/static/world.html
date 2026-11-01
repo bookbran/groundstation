@@ -326,7 +326,11 @@ const hAt = (i, j) => coreH[Math.max(0, Math.min(cgh - 1, j)) * cgw + Math.max(0
 // ── the river's level, from the lowest ground in the core ──
 const sorted = Array.from(coreH).sort((a, b) => a - b);
 const waterLevel = sorted[Math.floor(sorted.length * 0.02)] + 0.6;
-const hasWater = sorted.filter((v) => v < waterLevel + 0.2).length / sorted.length > 0.05;
+// a city's flat streets are not a lake (2026-11-01, Dan: "this looks like katrina floods ... so
+// neighborhoods like this don't get flooded"): in a city, water only where its study says there is some
+const hasWater = (meta.setting === 'city' || (meta.profile || {}).setting === 'city')
+  ? (meta.profile || {}).water === true
+  : sorted.filter((v) => v < waterLevel + 0.2).length / sorted.length > 0.05;
 const waterY = hasWater ? waterLevel : -1e6;   // with no water, nothing is "by the water"
 
 // ── THE BRIDGE, found in the data: the lidar ground model keeps the deck, so
@@ -1181,7 +1185,10 @@ const ROOST = (() => {
   const s = info.wingspan / 2 || 0.48;
   const crows = Array.from({ length: n }, (_, i) => {
     const t = roostTrees[i % roostTrees.length], a = rand() * 6.283, ea = rand() * 6.283;
-    return { perch: new THREE.Vector3(t.x + Math.cos(a) * (0.6 + rand() * 1.6), t.g + t.h * (0.84 + rand() * 0.14), -(t.y + Math.sin(a) * (0.6 + rand() * 1.6))),
+    // on the outside of the top of the crown, the way a roost looks from the street (2026-11-01: "i don't see them all in the trees")
+    const u = 0.72 + rand() * 0.24, sp = SPECIES[t.sp], w = t.h * (sp.broad ? 0.9 : 0.75) * (t.wide || 1);
+    const reach = (sp.broad ? (sp.width || 0.25) * w * 0.9 : (sp.width || 0.2) * w * Math.pow(1 - u, sp.taper || 0.9) * 0.95) + 0.35;
+    return { perch: new THREE.Vector3(t.x + Math.cos(a) * reach, t.g + t.h * u + 0.2, -(t.y + Math.sin(a) * reach)),
       entry: new THREE.Vector3(C[0] + Math.cos(ea) * 650, top + 50 + rand() * 40, -(C[1] + Math.sin(ea) * 650)),
       arrive: 6 + rand() * 60, lift: 82 + rand() * 16, leave: 128 + rand() * 30, orb: 25 + rand() * 70, alt: 20 + rand() * 45, ph: rand() * 6.283, v: 11 + rand() * 3 };
   });
