@@ -1128,6 +1128,16 @@ for (const b of BIRDS) {
     const n = Math.min(60, b.count || 36), mat = living(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.7 }), false);
     const im = new THREE.InstancedMesh(perchedBird(b), mat, n); im.frustumCulled = false; im.castShadow = true; scene.add(im);
     const birds = [];
+    // IN THE TREES (2026-11-01, Dan: "more of the birds ... in trees instead of on the ground"): about
+    // two in three sit on the outside of a crown at branch height, where you can see them
+    const perchTrees = plan.filter((t) => t.h >= 5 && t.x > core.extent[0] && t.x < core.extent[2] && t.y > core.extent[1] && t.y < core.extent[3]);
+    for (let k = 0; perchTrees.length && k < Math.round(n * 0.65); k++) {
+      const t = perchTrees[Math.floor(rand() * perchTrees.length)], sp = SPECIES[t.sp];
+      const w = t.h * (sp.broad ? 0.9 : 0.75) * (t.wide || 1), u = 0.55 + rand() * 0.3;
+      const reach = sp.broad ? (sp.width || 0.25) * w * 0.85 : (sp.width || 0.2) * w * Math.pow(1 - u, sp.taper || 0.9) * 0.9 + 0.2;
+      const a = rand() * 6.283;
+      birds.push({ x: t.x + Math.cos(a) * reach, y: t.y + Math.sin(a) * reach, g: t.g + t.h * u, rot: a + Math.PI / 2, hop: rand() * 6.283, s: b.wingspan * 0.42, tree: true });
+    }
     for (let tries = 0; birds.length < n && tries < n * 30; tries++) {
       const x = core.extent[0] + rand() * (core.extent[2] - core.extent[0]), y = core.extent[1] + rand() * (core.extent[3] - core.extent[1]);
       const [ci, cj] = cellAt(x, y), g = hAt(ci, cj);
@@ -1663,7 +1673,7 @@ async function meet(name, fig) {
   const c = camera.position, fl = flocks.find((x) => x.name === name), pe = perched.find((x) => x.name === name), at = new THREE.Vector3();
   let best = -1, bd = Infinity;
   if (fl) for (let i = 0; i < fl.birds.length; i++) { const m = new THREE.Matrix4(); fl.im.getMatrixAt(i, m); at.setFromMatrixPosition(m); const d = at.distanceToSquared(c); if (d < bd) { bd = d; best = i; } }
-  if (pe) pe.birds.forEach((b, i) => { const d = (b.x - c.x) ** 2 + (b.g - c.y) ** 2 + (-b.y - c.z) ** 2; if (d < bd) { bd = d; best = i; } });
+  if (pe) pe.birds.forEach((b, i) => { const d = ((b.x - c.x) ** 2 + (b.g - c.y) ** 2 + (-b.y - c.z) ** 2) * (b.tree ? 0.15 : 1); if (d < bd) { bd = d; best = i; } });   // one in a tree first
   if (best < 0) return;
   const span = (fl || pe).info.wingspan || 0.4;
   fly = null; camera.near = 0.05; camera.updateProjectionMatrix();
@@ -1708,9 +1718,9 @@ function flyBirds(dt) {
   const t = U.uTime.value;
   for (const p of perched) {
     p.birds.forEach((b, i) => {
-      const hopping = Math.max(0, Math.sin(t * 0.7 + b.hop * 5)) ** 8;   // now and then a little run of hops
+      const hopping = b.tree ? 0 : Math.max(0, Math.sin(t * 0.7 + b.hop * 5)) ** 8;   // on the ground now and then a little run of hops
       b.rot += hopping * dt * (Math.sin(b.hop) > 0 ? 1.2 : -1.2);
-      birdQ.setFromAxisAngle(birdUp, b.rot);
+      birdQ.setFromAxisAngle(birdUp, b.rot + (b.tree ? Math.sin(t * 0.6 + b.hop) * 0.5 : 0));   // in a tree it sits and looks about
       birdM.compose(birdP.set(b.x, b.g + Math.abs(Math.sin(t * 9 + b.hop)) * hopping * b.s * 0.8, -b.y), birdQ, birdS.set(b.s, b.s, b.s));
       p.im.setMatrixAt(i, birdM);
     });
