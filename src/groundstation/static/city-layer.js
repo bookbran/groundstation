@@ -39,11 +39,24 @@ function inWhen(w) {   // the slider's hour, today's day and date
 }
 function dressFacade(G) {   // a building in the skin someone gave it: their texture across its walls, its crown lettered
   const f = G.T.facade || {}, [tw, th] = f.tile_m || [4, 3.4];
-  const uv = G.UV.map((v, i) => v / (i % 2 ? th : tw));
+  // the walls wear the touch's texture; the roof stays the aerial photo of itself (2026-11-01, Dan:
+  // "the roof doesn't look like the sides do, use the satellite for the roof")
+  const WP = [], WN = [], WUV = [], RP = [], RN = [], RUV = [], ex = core.extent;
+  for (let k = 0; k < G.P.length / 3; k++) {
+    const roof = G.N[k * 3 + 1] > 0.45;
+    (roof ? RP : WP).push(G.P[k * 3], G.P[k * 3 + 1], G.P[k * 3 + 2]); (roof ? RN : WN).push(G.N[k * 3], G.N[k * 3 + 1], G.N[k * 3 + 2]);
+    if (roof) RUV.push((G.P[k * 3] - ex[0]) / (ex[2] - ex[0]), (-G.P[k * 3 + 2] - ex[1]) / (ex[3] - ex[1]));
+    else WUV.push(G.UV[k * 2] / tw, G.UV[k * 2 + 1] / th);
+  }
+  if (RP.length) {
+    const rg = new THREE.BufferGeometry();
+    rg.setAttribute('position', new THREE.Float32BufferAttribute(RP, 3)); rg.setAttribute('normal', new THREE.Float32BufferAttribute(RN, 3)); rg.setAttribute('uv', new THREE.Float32BufferAttribute(RUV, 2));
+    const rm = new THREE.Mesh(rg, living(new THREE.MeshStandardMaterial({ map: corePhoto, roughness: 0.9, metalness: 0 }), false)); rm.castShadow = rm.receiveShadow = true; scene.add(rm);
+  }
   const g = new THREE.BufferGeometry();
-  g.setAttribute('position', new THREE.Float32BufferAttribute(G.P, 3));
-  g.setAttribute('normal', new THREE.Float32BufferAttribute(G.N, 3));
-  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+  g.setAttribute('position', new THREE.Float32BufferAttribute(WP, 3));
+  g.setAttribute('normal', new THREE.Float32BufferAttribute(WN, 3));
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(WUV, 2));
   const mat = new THREE.MeshStandardMaterial({ color: 0xffffff, metalness: f.metalness ?? 0.1, roughness: f.roughness ?? 0.7 });
   if (f.texture) new THREE.TextureLoader().load(fileUrl(G.T.dir + f.texture), (t) => {
     t.wrapS = t.wrapT = THREE.RepeatWrapping; t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = renderer.capabilities.getMaxAnisotropy();

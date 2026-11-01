@@ -1217,7 +1217,10 @@ function roostTick(dt) {
   const R = ROOST; if (!R) return;
   const [h0, h1] = R.R.hours || [15.8, 17.6], h = HOUR.value, on = h >= h0 && h <= h1;
   if (!on) { if (R.clock >= 0) { R.clock = -1; for (let i = 0; i < R.flyM.count; i++) R.flyM.setMatrixAt(i, roostZero); for (let i = 0; i < R.sitM.count; i++) R.sitM.setMatrixAt(i, roostZero); R.flyM.instanceMatrix.needsUpdate = R.sitM.instanceMatrix.needsUpdate = true; } return; }
-  R.clock = (Math.max(0, R.clock) + dt) % R.cycle;
+  const sp = R.speed || 1;   // a press plays it quickly; the evening clock at its own pace
+  const before = R.clock;
+  R.clock = (Math.max(0, R.clock) + dt * sp) % R.cycle;
+  if (sp > 1 && R.clock < before) R.speed = 1;   // once through, back to the evening's pace
   const T = R.clock, s = R.s, cawers = [];
   R.crows.forEach((c, i) => {
     const st = roostAt(c, T, roostP);
@@ -1234,7 +1237,7 @@ function roostTick(dt) {
     else R.flyM.setMatrixAt(i, roostZero);
   });
   R.flyM.instanceMatrix.needsUpdate = R.sitM.instanceMatrix.needsUpdate = true;
-  if (SOUND.on && SOUND.buf[R.info.name] && U.uTime.value > R.nextCaw && cawers.length) {   // the racket of a roost gathering
+  if (SOUND.on && SOUND.buf[R.info.name] && U.uTime.value > R.nextCaw && cawers.length) {   // (faster when the evening is played quickly)   // the racket of a roost gathering
     voice(R.info.name, cawers[Math.floor(Math.random() * cawers.length)], 18); R.nextCaw = U.uTime.value + 0.35 + Math.random() * 0.6;
   }
 }

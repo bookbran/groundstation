@@ -21,7 +21,7 @@ const EV = { active: null, mig: null, crowd: null };
 function setEventHour(e) { if (!e.hours) return; if (typeof setFollowNow === 'function') setFollowNow(false); tod.value = e.hours[0] + 0.05; setSun(Number(tod.value)); }
 function playEvent(e) {
   setEventHour(e);
-  if (e.kind === 'roost' && ROOST) { ROOST.clock = 0; watchRoost(); }
+  if (e.kind === 'roost' && ROOST) { watchRoost(); ROOST.clock = 0; ROOST.speed = 3.6; }   // a press plays the evening in about a minute
   else if (e.kind === 'migration') startMigration(e);
   else if (e.kind === 'crowd') startCrowd(e);
   EV.active = e;
@@ -36,7 +36,8 @@ function startMigration(e) {
   const im = new THREE.InstancedMesh(flyingBird(info), living(new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, side: THREE.DoubleSide }), false), n);
   im.frustumCulled = false; scene.add(im);
   const c = controls.target, base = sampleHeight(c.x, -c.z), alt = e.altitude_m || 140;
-  const sk = Array.from({ length: skeins }, (_, k) => ({ off: (k - (skeins - 1) / 2) * (90 + rand() * 60), start: k * (6 + rand() * 10), alt: alt + (rand() - 0.5) * 40, rows: per, spd: 13 + rand() * 4 }));
+  // a press: the skeins come over within a minute, at a goose's real cruising speed
+  const sk = Array.from({ length: skeins }, (_, k) => ({ off: (k - (skeins - 1) / 2) * (90 + rand() * 60), start: k * (3 + rand() * 5), alt: alt + (rand() - 0.5) * 40, rows: per, spd: 19 + rand() * 4 }));
   EV.mig = { e, info, im, dir, perp, sk, per, t: 0, origin: new THREE.Vector2(c.x, -c.z), base, s: info.wingspan / 2, nextCall: 0 };
   // stand under the flight line, looking up toward where they come from
   const C = new THREE.Vector3(c.x, base + 2, c.z);
@@ -47,10 +48,10 @@ function migrationTick(dt) {
   const M = EV.mig; if (!M) return;
   M.t += dt; let alive = 0;
   M.sk.forEach((k, si) => {
-    const run = (M.t - k.start) * k.spd - 1800;
+    const run = (M.t - k.start) * k.spd - 700;
     for (let r = 0; r < M.per; r++) {
       const i = si * M.per + r;
-      if (M.t < k.start || run > 2000) { M.im.setMatrixAt(i, evZ); continue; }
+      if (M.t < k.start || run > 900) { M.im.setMatrixAt(i, evZ); continue; }
       alive++;
       const rank = Math.ceil(r / 2), side = r === 0 ? 0 : (r % 2 ? 1 : -1), sp = 2.6 * M.s * 2;
       const along = run - rank * sp * 0.9, across = k.off + side * rank * sp * 0.8;
@@ -62,7 +63,7 @@ function migrationTick(dt) {
   });
   M.im.instanceMatrix.needsUpdate = true;
   if (SOUND.on && SOUND.ctx && M.t > M.nextCall && alive) {   // their calls overhead
-    const k = M.sk[Math.floor(Math.random() * M.sk.length)], run = (M.t - k.start) * k.spd - 1800;
+    const k = M.sk[Math.floor(Math.random() * M.sk.length)], run = (M.t - k.start) * k.spd - 700;
     evP.set(M.origin.x + M.dir.x * run + M.perp.x * k.off, M.base + k.alt, -(M.origin.y + M.dir.y * run + M.perp.y * k.off));
     if (SOUND.buf[M.info.name]) voice(M.info.name, evP, 60); else honk(evP);
     M.nextCall = M.t + 0.4 + Math.random() * 0.9;
@@ -99,7 +100,7 @@ function startCrowd(e) {
     const p = ctx.createPanner(); Object.assign(p, { distanceModel: 'inverse', refDistance: R, rolloffFactor: 1, maxDistance: 8000 }); p.positionX.value = xy[0]; p.positionY.value = g0 + 3; p.positionZ.value = -xy[1];
     src.connect(bp).connect(gain).connect(p).connect(SOUND.layers.crowd || SOUND.layers.people || SOUND.master); src.start();
   }
-  EV.crowd = { e, im, ppl, xy, R, g0, t: 0, dur: e.duration_s || 300, src, gain, nextCheer: 4 };
+  EV.crowd = { e, im, ppl, xy, R, g0, t: 0, dur: e.duration_s || 60, src, gain, nextCheer: 3 };   // a press: about a minute, then they drift home
   const C = new THREE.Vector3(xy[0], g0, -xy[1]);
   fly = { t: 0, p0: camera.position.clone(), t0: controls.target.clone(), p1: C.clone().add(new THREE.Vector3(R * 1.3, Math.max(14, R * 0.5), R * 1.3)), t1: C.clone().add(new THREE.Vector3(0, 2, 0)) };
 }
