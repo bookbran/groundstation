@@ -109,7 +109,7 @@
     <button id="goBack">Pull back</button>
   </div>
   <div id="life" hidden></div>
-  <div class="facts" id="hint">scroll to fly toward the pointer · drag to steer (drag left to turn right; push up to dip, pull down to lift) · right-drag up and down to rise and sink, sideways to slide · W A S D to glide, Q E down and up, Shift for speed</div>
+  <div class="facts" id="hint">scroll to fly toward the pointer · drag to look around (the view follows the mouse) · right-drag to move the way the mouse goes (up and down to rise and sink, sideways to slide) · W A S D to glide, Q E down and up, Shift for speed</div>
   <div class="facts" id="facts"></div>
 </div>
 <script type="module">
@@ -2113,9 +2113,9 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   if (!steer) return;
   const dx = e.clientX - steer.x, dy = e.clientY - steer.y; steer = { x: e.clientX, y: e.clientY };
   steerOff.subVectors(controls.target, camera.position);
-  steerOff.applyAxisAngle(Y_UP, dx * 0.0035);                                     // turn
+  steerOff.applyAxisAngle(Y_UP, -dx * 0.0035);   // turn the way you drag (Dan, 2026-11-01)
   const len = steerOff.length(), pitch = Math.asin(THREE.MathUtils.clamp(steerOff.y / len, -1, 1));
-  const want = THREE.MathUtils.clamp(pitch + dy * 0.0035, -1.45, 1.45);         // push up, nose down
+  const want = THREE.MathUtils.clamp(pitch - dy * 0.0035, -1.45, 1.45);   // drag up to look up
   steerAxis.set(-steerOff.z, 0, steerOff.x).normalize();
   if (steerAxis.lengthSq()) steerOff.applyAxisAngle(steerAxis, want - pitch);
   controls.target.copy(camera.position).add(steerOff);
