@@ -147,16 +147,31 @@ function canopyShell() {
 // they are and model those too"): each one the aerial photo shows stands where it is parked, its
 // length, width and heading from the photo, its body the photo's colour, its kind a guess from its
 // size: a car, an SUV, a van or a pickup. Glass and tyres are dark; one draw per kind.
+const VEHICLE = {   // real sizes (m) and side profiles, x forward, y up: the painted body, then the glass above it
+  car:    { L: 4.6, W: 1.8, body: [[-2.3, .3], [2.3, .3], [2.33, .6], [2.18, .8], [1.15, .9], [-1.6, .93], [-2.25, .84], [-2.33, .58]],
+            glass: [[1.15, .9], [.5, 1.4], [-.8, 1.43], [-1.6, .93]] },
+  suv:    { L: 4.8, W: 1.95, body: [[-2.4, .36], [2.4, .36], [2.43, .74], [2.22, .98], [1.3, 1.06], [-2.36, 1.08], [-2.43, .8]],
+            glass: [[1.3, 1.06], [.72, 1.68], [-2.22, 1.72], [-2.36, 1.08]] },
+  van:    { L: 5.1, W: 2.0, body: [[-2.55, .36], [2.55, .36], [2.58, .8], [2.3, 1.04], [1.7, 1.1], [-2.55, 1.12], [-2.58, .9]],
+            glass: [[1.7, 1.1], [1.05, 1.95], [-2.45, 1.98], [-2.55, 1.12]] },
+  pickup: { L: 5.6, W: 2.0, body: [[-2.8, .42], [2.8, .42], [2.83, .86], [2.55, 1.1], [1.6, 1.15], [-2.8, 1.15], [-2.83, .9]],
+            glass: [[1.6, 1.15], [1.08, 1.76], [-.22, 1.79], [-.36, 1.15]] },
+};
 function vehicleGeometry(kind) {
-  const parts = [], paint = (g, shade) => { g = g.index ? g.toNonIndexed() : g; g.deleteAttribute('uv'); const n = g.attributes.position.count, c = new Float32Array(n * 3).fill(shade); g.setAttribute('color', new THREE.BufferAttribute(c, 3)); parts.push(g); };
-  // one unit long (x), one wide (z), heights in metres
-  const H = { car: [0.62, 0.5, 0.55, -0.05], suv: [0.82, 0.62, 0.62, -0.08], van: [1.05, 0.85, 0.82, 0.12], pickup: [0.8, 0.6, 0.36, 0.12] }[kind] || [0.62, 0.5, 0.55, -0.05];
-  const [bodyH, cabH, cabL, cabOff] = H;
-  paint(new THREE.BoxGeometry(1, bodyH, 0.96).translate(0, 0.28 + bodyH / 2, 0), 1);                          // the body, its colour
-  paint(new THREE.BoxGeometry(cabL, cabH, 0.86).translate(cabOff, 0.28 + bodyH + cabH / 2, 0), 0.16);          // the cabin's glass
-  paint(new THREE.BoxGeometry(cabL * 0.9, 0.05, 0.88).translate(cabOff, 0.28 + bodyH + cabH, 0), 1);           // its roof, painted
-  if (kind === 'pickup') paint(new THREE.BoxGeometry(0.42, 0.12, 0.9).translate(-0.27, 0.28 + bodyH + 0.06, 0), 0.5);   // the bed's rim
-  for (const sx of [-0.33, 0.33]) for (const sz of [-0.46, 0.46]) paint(new THREE.CylinderGeometry(0.33, 0.33, 0.12, 12).rotateX(Math.PI / 2).translate(sx, 0.33, sz), 0.06);
+  const V = VEHICLE[kind] || VEHICLE.car, parts = [];
+  const paint = (g, shade) => { g = g.index ? g.toNonIndexed() : g; if (g.attributes.uv) g.deleteAttribute('uv'); const n = g.attributes.position.count; g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 3).fill(shade), 3)); parts.push(g); };
+  const slab = (pts, depth, bevel) => { const sh = new THREE.Shape(pts.map(([x, y]) => new THREE.Vector2(x, y)));
+    const g = new THREE.ExtrudeGeometry(sh, { depth, bevelEnabled: true, bevelThickness: bevel, bevelSize: bevel, bevelSegments: 2, curveSegments: 4 });
+    g.translate(0, 0, -depth / 2); g.computeVertexNormals(); return g; };
+  paint(slab(V.body, V.W - 0.1, 0.05), 1);                                     // the body, its colour
+  paint(slab(V.glass, V.W - 0.28, 0.04), 0.13);                               // the glasshouse
+  if (kind === 'pickup') paint(new THREE.BoxGeometry(2.3, 0.06, V.W - 0.3).translate(-1.55, 1.12, 0), 0.35);   // the bed's floor, seen from above
+  const wx = V.L / 2 - 0.82;
+  for (const sx of [-wx, wx]) for (const sz of [-1, 1]) {
+    const t = new THREE.CylinderGeometry(0.34, 0.34, 0.24, 18).rotateX(Math.PI / 2).translate(sx, 0.34, sz * (V.W / 2 - 0.16));
+    paint(t, 0.05);
+    paint(new THREE.CylinderGeometry(0.19, 0.19, 0.25, 12).rotateX(Math.PI / 2).translate(sx, 0.34, sz * (V.W / 2 - 0.155)), 0.55);   // the hubs
+  }
   return mergeGeometries(parts);
 }
 function cityVehicles() {
@@ -166,12 +181,13 @@ function cityVehicles() {
   for (const v of list) (byKind[v.kind] = byKind[v.kind] || []).push(v);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), pos = new THREE.Vector3(), sc = new THREE.Vector3(), col = new THREE.Color(), up = new THREE.Vector3(0, 1, 0);
   for (const [kind, vs] of Object.entries(byKind)) {
-    const im = new THREE.InstancedMesh(vehicleGeometry(kind), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.35, metalness: 0.45 }), vs.length);
+    const im = new THREE.InstancedMesh(vehicleGeometry(kind), new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.35 }), vs.length);
     vs.forEach((v, i) => {
       // the photo's colour of a car is lit from above and a little washed out: deepen it a touch
       col.set(v.colour); const hsl = {}; col.getHSL(hsl); col.setHSL(hsl.h, Math.min(1, hsl.s * 1.25), Math.max(0.06, Math.min(0.9, hsl.l * 0.92)));
       im.setColorAt(i, col);
-      m4.compose(pos.set(v.at[0], sampleHeight(v.at[0], v.at[1]), -v.at[1]), q.setFromAxisAngle(up, v.yaw), sc.set(v.len, 1, v.wid));
+      const V = VEHICLE[kind] || VEHICLE.car;   // a real-sized model, only nudged toward what the photo measured
+      m4.compose(pos.set(v.at[0], sampleHeight(v.at[0], v.at[1]), -v.at[1]), q.setFromAxisAngle(up, v.yaw), sc.set(THREE.MathUtils.clamp(v.len / V.L, 0.88, 1.12), 1, THREE.MathUtils.clamp(v.wid / V.W, 0.92, 1.08)));
       im.setMatrixAt(i, m4);
     });
     im.castShadow = im.receiveShadow = true; scene.add(im);
