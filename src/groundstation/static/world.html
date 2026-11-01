@@ -714,9 +714,9 @@ const DEFAULT_SPECIES = [
   { name: 'red alder and bigleaf maple', form: 'broad', leaf: '#4f7a34', clear: 0.42, width: 0.22, share: 0.12, water: 'near', maxHeight: 28, tint: [1.2, 1.25, 0.85] },
 ];
 const SPECIES = (Array.isArray(PROFILE.species) && PROFILE.species.length ? PROFILE.species : DEFAULT_SPECIES).slice(0, 6).map((s) => s.form === 'broad'
-  ? { name: s.name, broad: true, leaf: hex(s.leaf, 0x4f7a34), clear: s.clear ?? 0.42, trunk: 0.02, clumps: s.clumps ?? 24, clump: s.clump ?? 0.085, width: s.width ?? 0.22,
+  ? { name: s.name, broad: true, leaf: hex(s.leaf, 0x4f7a34), clear: s.clear ?? 0.42, trunk: 0.02, clumps: s.clumps ?? 36, clump: s.clump ?? 0.078, width: s.width ?? 0.22,
       share: s.share ?? 0.2, water: s.water || 'any', elev: s.elev, maxHeight: s.maxHeight, tint: s.tint }
-  : { name: s.name, needle: hex(s.needle, 0x29452c), tip: hex(s.tip, 0x3b6038), trunk: 0.016, clear: s.clear ?? 0.2, tiers: s.tiers ?? 11, whorl: 4,
+  : { name: s.name, needle: hex(s.needle, 0x29452c), tip: hex(s.tip, 0x3b6038), trunk: 0.016, clear: s.clear ?? 0.2, tiers: Math.max(14, s.tiers ?? 11), whorl: 6,
       width: s.width ?? 0.2, taper: s.taper ?? 0.9, droop: s.droop ?? 0.35, share: s.share ?? 0.3, water: s.water || 'any', elev: s.elev, maxHeight: s.maxHeight, tint: s.tint });
 // which species stands here: each one's share, weighted by its rules
 function pickSpecies(ground, height, nearWater, r) {
@@ -805,7 +805,10 @@ for (let i = 0; i < nT; i++) {
   // a tree the city has named stands as its own species (Portland's street tree inventory, 2026-11-01)
   const own = Array.isArray(meta.tree_sp) ? meta.tree_sp[i] : -1;
   const sp = own >= 0 && own < SPECIES.length ? own : pickSpecies(g, h, nearWater, r);
-  plan.push({ x, y, g, h, sp, rot: rand() * Math.PI * 2, wide: 0.85 + rand() * 0.35, tint: rand() });
+  // a crown as wide as the lidar found it (2026-11-01), else the species' own reach with a little variety
+  const rad = Array.isArray(meta.tree_r) ? meta.tree_r[i] : 0, sw = SPECIES[sp].width || 0.22, hw = h * (SPECIES[sp].broad ? 0.9 : 0.75) * sw;
+  const wide = rad > 0 ? Math.min(2.2, Math.max(0.6, rad / Math.max(0.5, hw))) : 0.85 + rand() * 0.35;
+  plan.push({ x, y, g, h, sp, rot: rand() * Math.PI * 2, wide, tint: rand() });
 }
 {
   const maple = Math.max(0, SPECIES.findIndex((s) => s.broad && /maple/i.test(s.name)) >= 0 ? SPECIES.findIndex((s) => s.broad && /maple/i.test(s.name)) : SPECIES.findIndex((s) => s.broad));
@@ -996,7 +999,6 @@ const buildingCount = CITY ? cityBuildings() : (() => {
 })();
 const signCount = CITY ? (indexEdges(), citySigns()) : 0;
 if (CITY) { cityScreens(); cityCrowd(); placeTagHeights(); }
-canopyShell();
 touchTrees();
 touchCreatures();
 touchMaterials();
