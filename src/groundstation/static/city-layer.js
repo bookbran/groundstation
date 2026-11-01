@@ -301,9 +301,15 @@ function cityBuildings() {
         // where a tree hangs over it, or deep shadow, the roof's own colour (the builder's median) shows
         if (vB.z < 0.5 && vWP.x > uExt.x && vWP.x < uExt.z && -vWP.z > uExt.y && -vWP.z < uExt.w) {
           vec2 puv = vec2((vWP.x - uExt.x) / (uExt.z - uExt.x), (-vWP.z - uExt.y) / (uExt.w - uExt.y));
-          vec3 ph = texture2D(uPhoto, puv).rgb;
-          float leaf = step(ph.r * 1.06, ph.g) * step(ph.b * 1.02, ph.g), dk = step(ph.r + ph.g + ph.b, 0.05);
-          diffuseColor.rgb = mix(ph * 1.08, diffuseColor.rgb, max(leaf, dk) * 0.92);
+          // the roof's own even colour, with only the photo's light and dark (softened over about a
+          // metre) on top, so a roof reads as one material, not a patchwork (2026-11-01: "splotchy")
+          vec2 px = 0.7 / vec2(uExt.z - uExt.x, uExt.w - uExt.y);
+          vec3 ph = (texture2D(uPhoto, puv).rgb * 2.0 + texture2D(uPhoto, puv + vec2(px.x, 0.0)).rgb + texture2D(uPhoto, puv - vec2(px.x, 0.0)).rgb
+                   + texture2D(uPhoto, puv + vec2(0.0, px.y)).rgb + texture2D(uPhoto, puv - vec2(0.0, px.y)).rgb) / 6.0;
+          float leaf = smoothstep(0.0, 0.04, ph.g - max(ph.r * 1.04, ph.b)), dk = 1.0 - smoothstep(0.03, 0.08, ph.r + ph.g + ph.b);
+          float lumP = dot(ph, vec3(0.3, 0.55, 0.15)), lumR = max(0.02, dot(diffuseColor.rgb, vec3(0.3, 0.55, 0.15)));
+          float detail = clamp(pow(lumP / lumR, 0.5), 0.82, 1.18);
+          diffuseColor.rgb *= mix(detail, 1.0, max(leaf, dk));
         }`)
       .replace('#include <roughnessmap_fragment>', '#include <roughnessmap_fragment>\n roughnessFactor = mix(roughnessFactor, 0.22, W.x);')
       .replace('#include <metalnessmap_fragment>', '#include <metalnessmap_fragment>\n metalnessFactor = mix(metalnessFactor, 0.0, W.x);')
