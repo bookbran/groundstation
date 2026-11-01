@@ -21,6 +21,11 @@
   .row { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
   .row label { flex: none; width: 92px; color: rgba(243,237,228,.8); }
   .row input[type=range] { flex: 1; accent-color: #E84A2F; }
+  .row .now { flex: none; display: grid; place-items: center; width: 26px; height: 26px; padding: 0; border-radius: 50%; cursor: pointer;
+    color: rgba(243,237,228,.6); background: none; border: 1px solid rgba(243,237,228,.22); transition: color .2s, background .2s, border-color .2s; }
+  .row .now svg { width: 15px; height: 15px; }
+  .row .now:hover { color: #f3ede4; border-color: rgba(232,74,47,.6); }
+  .row .now.on { color: #fff; background: #E84A2F; border-color: #E84A2F; }
   .row output { width: 48px; text-align: right; font: 12px "Roboto Mono", Consolas, monospace; color: #E84A2F; }
   .btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .btns button { flex: 1 1 auto; font: inherit; font-size: 12.5px; padding: 7px 10px; border-radius: 9px; cursor: pointer;
@@ -92,7 +97,7 @@
 <div id="panel">
   <h1>__TITLE__, a living world</h1>
   <p id="about"></p>
-  <div class="row"><label for="tod">Time of day</label><input id="tod" type="range" min="6" max="20" step="0.05" value="16.5"><output id="todv"></output></div>
+  <div class="row"><label for="tod">Time of day</label><input id="tod" type="range" min="5" max="23.9" step="0.05" value="16.5"><output id="todv"></output><button id="todnow" type="button" class="now" title="Follow the time now: the world keeps your clock's time of day" aria-pressed="false"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true"><circle cx="10" cy="10" r="7.2"/><path d="M10 5.6V10l3 1.9"/></svg></button></div>
   <div class="row"><label for="wind">Wind</label><input id="wind" type="range" min="0" max="1" step="0.01" value="0.35"><output id="windv"></output></div>
   <div class="row"><label for="cloud">Cloud shadows</label><input id="cloud" type="range" min="0" max="0.6" step="0.01" value="0.3"><output id="cloudv"></output></div>
   <div class="row"><label for="sound">Sound</label><button id="sound" type="button" style="flex:1;font:inherit;font-size:12.5px;padding:6px 10px;border-radius:9px;cursor:pointer;color:#f3ede4;background:rgba(232,74,47,.14);border:1px solid rgba(232,74,47,.45)">Hear this place</button></div>
@@ -1874,13 +1879,13 @@ function setSun(hour) {
   const k = (hour - 6) / 14;
   const trueElev = 64 * Math.sin(Math.PI * k), elev = Math.max(1.5, trueElev);
   // a city runs on into the night (2026-10-31): past dusk the sky goes dark, windows and signs light
-  const night = CITY ? THREE.MathUtils.smoothstep(hour, 17.4, 19.3) + (1 - THREE.MathUtils.smoothstep(hour, 4.9, 6.3)) : 0;
+  const night = THREE.MathUtils.smoothstep(hour, CITY ? 17.4 : 18.6, CITY ? 19.3 : 20.6) + (1 - THREE.MathUtils.smoothstep(hour, 4.9, 6.3));
   NIGHT.value = Math.min(1, night);
   const az = 90 + k * 180;   // east in the morning, west in the evening
   const phi = THREE.MathUtils.degToRad(90 - elev), theta = THREE.MathUtils.degToRad(az);
   const dir = new THREE.Vector3().setFromSphericalCoords(1, phi, theta);
   dir.set(Math.sin(theta) * Math.sin(phi), Math.cos(phi), -Math.cos(theta) * Math.sin(phi));
-  if (CITY && trueElev < 1.5) { const sp = THREE.MathUtils.degToRad(90 - Math.max(-14, trueElev)); sky.material.uniforms.sunPosition.value.set(Math.sin(theta) * Math.sin(sp), Math.cos(sp), -Math.cos(theta) * Math.sin(sp)); }
+  if (trueElev < 1.5) { const sp = THREE.MathUtils.degToRad(90 - Math.max(-14, trueElev)); sky.material.uniforms.sunPosition.value.set(Math.sin(theta) * Math.sin(sp), Math.cos(sp), -Math.cos(theta) * Math.sin(sp)); }
   else sky.material.uniforms.sunPosition.value.copy(dir);
   sun.position.copy(dir).multiplyScalar(8000); sun.target.position.set(0, 0, 0);
   const warm = THREE.MathUtils.clamp(1 - elev / 30, 0, 1);
@@ -1888,7 +1893,7 @@ function setSun(hour) {
   U.uSun.value.copy(dir); U.uSunCol.value.copy(sun.color);
   sun.intensity = (0.6 + 3 * Math.min(1, elev / 25)) * (1 - NIGHT.value * 0.97);
   hemi.intensity = (0.25 + 0.45 * Math.min(1, elev / 25)) * (1 - NIGHT.value * 0.7);
-  if (CITY) { renderer.toneMappingExposure = 0.55 + NIGHT.value * 0.55; for (const m of signMats) m.color.setScalar(0.85 + NIGHT.value * 1.6); }
+  renderer.toneMappingExposure = 0.55 + NIGHT.value * (CITY ? 0.55 : 0.35); for (const m of signMats) m.color.setScalar(0.85 + NIGHT.value * 1.6);
   scene.fog.color.setRGB(0.78 - warm * 0.05, 0.8 - warm * 0.14, 0.84 - warm * 0.3).lerp(new THREE.Color(0.07, 0.075, 0.11), NIGHT.value * 0.92);
   // the sky lights the scene too: its reflection in the water, its tint on everything
   clearTimeout(setSun.env);
@@ -1901,7 +1906,7 @@ function setSun(hour) {
   document.getElementById('todv').textContent = (hh % 12 || 12) + ':' + String(mm).padStart(2, '0') + (hh < 12 ? 'a' : 'p');
 }
 const tod = document.getElementById('tod'), wind = document.getElementById('wind'), haze = document.getElementById('haze');
-if (CITY) { tod.min = 5; tod.max = 23.9; tod.value = 18.9; }
+if (CITY) tod.value = 18.9;
 const setHaze = () => { scene.fog.density = 0.000004 + Number(haze.value) * 0.00004; document.getElementById('hazev').textContent = Math.round(haze.value * 100) + '%'; };
 const setWind = () => { uniforms.uWind.value = Number(wind.value); document.getElementById('windv').textContent = Math.round(wind.value * 100) + '%'; };
 document.getElementById('sound').onclick = async (e) => {
@@ -1911,7 +1916,19 @@ document.getElementById('sound').onclick = async (e) => {
 };
 const cloud = document.getElementById('cloud'); const setCloud = () => { U.uCloud.value = Number(cloud.value); document.getElementById('cloudv').textContent = Math.round(cloud.value / 0.6 * 100) + '%'; };
 cloud.oninput = setCloud; setCloud();
-tod.oninput = () => setSun(Number(tod.value)); wind.oninput = setWind; haze.oninput = setHaze;
+// FOLLOW THE TIME NOW (2026-10-31, Dan: "an icon toggle for living world that would make the
+// place look like it was the current time of day in the system time"): the clock button sets
+// the world to your computer's time of day and keeps it there; moving the slider lets go
+const todNow = document.getElementById('todnow');
+const nowHour = () => { const d = new Date(); return Math.min(23.9, Math.max(5, d.getHours() + d.getMinutes() / 60)); };
+let followNow = false, nowTimer = 0;
+function setFollowNow(on) {
+  followNow = !!on; todNow.classList.toggle('on', followNow); todNow.setAttribute('aria-pressed', String(followNow));
+  clearInterval(nowTimer);
+  if (followNow) { const tick = () => { tod.value = nowHour(); setSun(Number(tod.value)); }; tick(); nowTimer = setInterval(tick, 30000); }
+}
+todNow.onclick = () => setFollowNow(!followNow);
+tod.oninput = () => { if (followNow) setFollowNow(false); setSun(Number(tod.value)); }; wind.oninput = setWind; haze.oninput = setHaze;
 setSun(Number(tod.value)); setWind(); setHaze();
 
 // ── places, labelled ──
@@ -1984,12 +2001,12 @@ if (CITY) {
 // the view is kept per world as you move, and a reload opens on it
 const VIEW_KEY = 'living-world.view.__WORLD__';
 const v0 = views.bridge(); camera.position.copy(v0.pos); controls.target.copy(v0.target);
-try { const k = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); if (k && k.p && k.t) { camera.position.fromArray(k.p); controls.target.fromArray(k.t); if (k.h != null) { tod.value = k.h; setSun(Number(k.h)); } } } catch (_) {}
+try { const k = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); if (k && k.p && k.t) { camera.position.fromArray(k.p); controls.target.fromArray(k.t); if (k.h != null) { tod.value = k.h; setSun(Number(k.h)); } if (k.now) setFollowNow(true); } } catch (_) {}
 controls.update();
 let viewSaved = 0;
 function keepView(now) {
   if (now - viewSaved < 1500) return; viewSaved = now;
-  try { localStorage.setItem(VIEW_KEY, JSON.stringify({ p: camera.position.toArray().map((x) => +x.toFixed(2)), t: controls.target.toArray().map((x) => +x.toFixed(2)), h: Number(tod.value) })); } catch (_) {}
+  try { localStorage.setItem(VIEW_KEY, JSON.stringify({ p: camera.position.toArray().map((x) => +x.toFixed(2)), t: controls.target.toArray().map((x) => +x.toFixed(2)), h: Number(tod.value), now: followNow })); } catch (_) {}
 }
 
 document.getElementById('facts').innerHTML =
