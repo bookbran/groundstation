@@ -2136,7 +2136,7 @@ renderer.domElement.addEventListener('pointermove', (e) => {
   const dx = e.clientX - lift.x, dy = e.clientY - lift.y; lift = { x: e.clientX, y: e.clientY };
   const k = 0.1 + Math.max(0, aboveGround()) * 0.005;
   camera.getWorldDirection(flyF); flyF.y = 0; flyF.normalize(); flyR.crossVectors(flyF, camera.up).normalize();
-  liftBy.set(0, -dy * k, 0).addScaledVector(flyR, -dx * k * 0.8);
+  liftBy.set(0, -dy * k, 0).addScaledVector(flyR, dx * k * 0.8);   // you move the way the mouse goes (Dan, 2026-11-01: "the mouse direction should be the strafe direction")
   camera.position.add(liftBy); controls.target.add(liftBy);
   const g = sampleHeight(camera.position.x, -camera.position.z) + 1.6;
   if (camera.position.y < g) { controls.target.y += g - camera.position.y; camera.position.y = g; }
