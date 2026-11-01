@@ -68,6 +68,18 @@
   #life .add-touch { align-self: flex-end; margin-top: 4px; font: 600 12px "Roboto Condensed", Bahnschrift, sans-serif; letter-spacing: .02em;
     padding: 7px 12px; border-radius: 9px; cursor: pointer; color: #f3ede4; background: rgba(232,74,47,.16); border: 1px solid rgba(232,74,47,.5); }
   #life .add-touch:hover { background: rgba(232,74,47,.32); }
+  #compass { position: absolute; right: 18px; bottom: 18px; z-index: 3; width: 104px; height: 104px; }
+  #compass .ring { width: 104px; height: 104px; cursor: grab; touch-action: none; filter: drop-shadow(0 2px 8px rgba(0,0,0,.35)); }
+  #compass .ring:active { cursor: grabbing; }
+  #compass .ring circle { fill: rgba(21,18,15,.55); stroke: rgba(243,237,228,.35); stroke-width: 2; }
+  #compass .needle { transform-origin: 50px 50px; transform-box: view-box; }
+  #compass .needle .n { fill: #E84A2F; } #compass .needle .s { fill: rgba(243,237,228,.75); }
+  #compass button { position: absolute; display: grid; place-items: center; padding: 0; border: 0; border-radius: 50%; cursor: pointer;
+    background: rgba(21,18,15,.72); color: #f3ede4; font: 700 11px "Roboto Condensed", sans-serif; width: 24px; height: 24px; }
+  #compass button:hover { background: #E84A2F; }
+  #compass button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+  #compass .north { left: 40px; top: -14px; } #compass .tilt-up { left: -14px; top: 40px; } #compass .tilt-down { right: -14px; top: 40px; }
+  #compass .down { left: 40px; bottom: -14px; } #compass .down svg { fill: currentColor; }
   #placecard { position: absolute; left: 388px; bottom: 16px; z-index: 3; width: min(460px, calc(100vw - 410px)); display: flex; gap: 12px; padding: 12px 14px;
     background: rgba(21,18,15,.62); backdrop-filter: blur(24px); border-radius: 14px; font-size: 13px; box-sizing: border-box; }
   #placecard[hidden] { display: none; }
@@ -93,6 +105,13 @@
 <body>
 <div id="loading">Building the world…</div>
 <div id="placecard" hidden></div>
+<div id="compass" title="Drag the ring to turn · N faces north · arrows tilt · the middle looks straight down">
+  <svg class="ring" viewBox="0 0 100 100"><circle cx="50" cy="50" r="44"/><g class="needle"><path d="M50 12 L57 50 L50 46 L43 50 Z" class="n"/><path d="M50 88 L57 50 L50 54 L43 50 Z" class="s"/></g></svg>
+  <button type="button" class="north" aria-label="Face north">N</button>
+  <button type="button" class="tilt-up" aria-label="Tilt toward the horizon"><svg viewBox="0 0 20 20"><path d="M5 12l5-5 5 5"/></svg></button>
+  <button type="button" class="tilt-down" aria-label="Tilt toward the ground"><svg viewBox="0 0 20 20"><path d="M5 8l5 5 5-5"/></svg></button>
+  <button type="button" class="down" aria-label="Look straight down"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="3"/></svg></button>
+</div>
 <div id="view"></div>
 <div id="panel">
   <h1>__TITLE__, a living world</h1>
@@ -109,7 +128,7 @@
     <button id="goBack">Pull back</button>
   </div>
   <div id="life" hidden></div>
-  <div class="facts" id="hint">scroll to fly toward the pointer · drag to look around (the view follows the mouse) · right-drag to move the way the mouse goes (up and down to rise and sink, sideways to slide) · W A S D to glide, Q E down and up, Shift for speed</div>
+  <div class="facts" id="hint">scroll to fly toward the pointer · drag to look around (the view follows the mouse) · right-drag to move the way the mouse goes (up and down to rise and sink, sideways to slide) · Shift or Ctrl + drag, or middle-drag, to orbit the spot under the pointer · the compass turns, faces north and tilts · W A S D to glide, Q E down and up, Shift for speed</div>
   <div class="facts" id="facts"></div>
 </div>
 <script type="module">
@@ -2106,10 +2125,11 @@ controls.mouseButtons.RIGHT = -1;
 // where you are, as a pilot does: drag right to turn right, push up to dip the nose and
 // pull down to lift it. Replaces the orbit's swing around a point out in front.
 controls.mouseButtons.LEFT = -1;
+const COMPASS = { needle: null };
 let steer = null;
 const steerOff = new THREE.Vector3(), steerAxis = new THREE.Vector3(), Y_UP = new THREE.Vector3(0, 1, 0);
 renderer.domElement.addEventListener('pointerdown', (e) => {
-  if (e.button !== 0) return;
+  if (e.button !== 0 || e.shiftKey || e.ctrlKey || e.metaKey) return;
   steer = { x: e.clientX, y: e.clientY }; try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
   if (meeting) meeting.until = 0; fly = null;
 });
@@ -2148,6 +2168,75 @@ renderer.domElement.addEventListener('pointermove', (e) => {
 const endLift = (e) => { if (lift && e.button === 2) { lift = null; try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) {} } };
 renderer.domElement.addEventListener('pointerup', endLift);
 renderer.domElement.addEventListener('pointercancel', () => { lift = null; });
+// ORBIT, THE WAY GOOGLE EARTH DOES IT (2026-11-01, Dan: "rotate the camera angle well, perhaps
+// from a kind of control that google earth uses"): Shift or Ctrl + drag, or the middle button,
+// circles the spot under the pointer: sideways swings round it, up and down tilts between
+// looking across and looking down. The compass in the corner turns the view about the middle
+// of the screen, faces north, tilts, and looks straight down.
+controls.mouseButtons.MIDDLE = -1;
+let orbit = null;
+const orbitNd = new THREE.Vector2(), orbitRay = new THREE.Raycaster(), orbitV = new THREE.Vector3();
+function pivotAt(clientX, clientY) {
+  const r = renderer.domElement.getBoundingClientRect();
+  orbitNd.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+  orbitRay.setFromCamera(orbitNd, camera);
+  const d = orbitRay.ray.direction.clone(), hit = groundAlong(camera.position, d, 60000);
+  return hit ? camera.position.clone().addScaledVector(d, hit) : controls.target.clone();
+}
+function orbitBy(pivot, yaw, tilt) {   // swing the camera (and what it looks at) round a point
+  for (const v of [camera.position, controls.target]) { v.sub(pivot).applyAxisAngle(Y_UP, yaw).add(pivot); }
+  if (tilt) {
+    orbitV.subVectors(camera.position, pivot);
+    const len = orbitV.length(), elev = Math.asin(THREE.MathUtils.clamp(orbitV.y / len, -1, 1));
+    const want = THREE.MathUtils.clamp(elev + tilt, 0.04, 1.55);
+    const axis = new THREE.Vector3(-orbitV.z, 0, orbitV.x).normalize();
+    if (axis.lengthSq()) for (const v of [camera.position, controls.target]) { v.sub(pivot).applyAxisAngle(axis, want - elev).add(pivot); }
+  }
+  const g = sampleHeight(camera.position.x, -camera.position.z) + 1.6;
+  if (camera.position.y < g) { const up = g - camera.position.y; camera.position.y += up; controls.target.y += up; }
+}
+renderer.domElement.addEventListener('pointerdown', (e) => {
+  if (!(e.button === 1 || (e.button === 0 && (e.shiftKey || e.ctrlKey || e.metaKey)))) return;
+  e.preventDefault();
+  orbit = { x: e.clientX, y: e.clientY, pivot: pivotAt(e.clientX, e.clientY), button: e.button };
+  try { renderer.domElement.setPointerCapture(e.pointerId); } catch (_) {}
+  if (meeting) meeting.until = 0; fly = null;
+});
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!orbit) return;
+  const dx = e.clientX - orbit.x, dy = e.clientY - orbit.y; orbit.x = e.clientX; orbit.y = e.clientY;
+  orbitBy(orbit.pivot, -dx * 0.005, dy * 0.004);
+});
+const endOrbit = (e) => { if (orbit && e.button === orbit.button) { orbit = null; try { renderer.domElement.releasePointerCapture(e.pointerId); } catch (_) {} } };
+renderer.domElement.addEventListener('pointerup', endOrbit);
+renderer.domElement.addEventListener('pointercancel', () => { orbit = null; });
+// the compass
+{
+  const cp = document.getElementById('compass'), needle = cp.querySelector('.needle'), ring = cp.querySelector('.ring');
+  const middle = () => pivotAt(innerWidth / 2, innerHeight / 2);
+  let turning = null;
+  ring.addEventListener('pointerdown', (e) => {
+    const b = ring.getBoundingClientRect(); turning = { cx: b.left + b.width / 2, cy: b.top + b.height / 2, a: Math.atan2(e.clientY - (b.top + b.height / 2), e.clientX - (b.left + b.width / 2)), pivot: middle() };
+    try { ring.setPointerCapture(e.pointerId); } catch (_) {} e.preventDefault(); fly = null;
+  });
+  ring.addEventListener('pointermove', (e) => {
+    if (!turning) return;
+    const a = Math.atan2(e.clientY - turning.cy, e.clientX - turning.cx); let d = a - turning.a; turning.a = a;
+    if (d > Math.PI) d -= 2 * Math.PI; if (d < -Math.PI) d += 2 * Math.PI;
+    orbitBy(turning.pivot, -d, 0);
+  });
+  ring.addEventListener('pointerup', () => { turning = null; });
+  const glide = (yaw, tilt) => {   // a gentle turn to a heading or a tilt, about the middle of the screen
+    const pivot = middle(), steps = 24; let k = 0;
+    const tick = () => { if (k++ >= steps) return; orbitBy(pivot, yaw / steps, tilt / steps); requestAnimationFrame(tick); };
+    fly = null; tick();
+  };
+  cp.querySelector('.north').onclick = () => { camera.getWorldDirection(orbitV); const heading = Math.atan2(orbitV.x, -orbitV.z); glide(heading, 0); };
+  cp.querySelector('.tilt-up').onclick = () => glide(0, -0.22);
+  cp.querySelector('.tilt-down').onclick = () => glide(0, 0.22);
+  cp.querySelector('.down').onclick = () => { const p = middle(); orbitV.subVectors(camera.position, p); const elev = Math.asin(THREE.MathUtils.clamp(orbitV.y / orbitV.length(), -1, 1)); glide(0, 1.5 - elev); };
+  COMPASS.needle = needle;
+}
 function flyAround(dt) {
   flyM.set(0, 0, 0);
   if (keys.size) {
@@ -2174,6 +2263,7 @@ renderer.setAnimationLoop(() => {
     if (fly.t >= 1) fly = null;
   }
   flyAround(dt);
+  if (COMPASS.needle) { camera.getWorldDirection(orbitV); COMPASS.needle.style.transform = 'rotate(' + (-Math.atan2(orbitV.x, -orbitV.z) * 180 / Math.PI) + 'deg)'; }
   controls.update();
   { const g = sampleHeight(camera.position.x, -camera.position.z) + 1.6; if (camera.position.y < g) camera.position.y = g; }
   relod();
